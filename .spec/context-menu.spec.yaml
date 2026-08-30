@@ -1,0 +1,142 @@
+# ============================================================
+# 模块 6：右键菜单
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: context-menu
+  name: 右键菜单
+  description: >
+    通过 Chrome contextMenus API 注册右键菜单项。
+    选中文本后直接执行编解码/格式化操作，结果通过通知
+    或自动复制到剪贴板展示。
+
+# --- 菜单项定义 ---
+menu_items:
+
+  - id: base64-decode-selection
+    title: "SecTools: Base64 解码"
+    contexts: [selection]
+    action: base64Decode
+    on_result: copy_to_clipboard
+
+  - id: base64-encode-selection
+    title: "SecTools: Base64 编码"
+    contexts: [selection]
+    action: base64Encode
+    on_result: copy_to_clipboard
+
+  - id: url-decode-selection
+    title: "SecTools: URL 解码"
+    contexts: [selection]
+    action: urlDecode
+    on_result: copy_to_clipboard
+
+  - id: url-encode-selection
+    title: "SecTools: URL 编码"
+    contexts: [selection]
+    action: urlEncode
+    on_result: copy_to_clipboard
+
+  - id: json-format-selection
+    title: "SecTools: JSON 格式化"
+    contexts: [selection]
+    action: jsonFormat
+    on_result: copy_to_clipboard
+
+  - id: unicode-decode-selection
+    title: "SecTools: Unicode 解码"
+    contexts: [selection]
+    action: unicodeEscapeDecode
+    on_result: copy_to_clipboard
+
+  - id: hex-decode-selection
+    title: "SecTools: Hex 解码"
+    contexts: [selection]
+    action: hexDecode
+    on_result: copy_to_clipboard
+
+  - id: timestamp-convert-selection
+    title: "SecTools: 时间戳转换"
+    contexts: [selection]
+    action: timestampToHuman  # 尝试将选中内容作为时间戳转换
+    on_result: copy_to_clipboard
+
+  - id: hash-sha256-selection
+    title: "SecTools: SHA-256"
+    contexts: [selection]
+    action: computeHash (SHA-256)
+    on_result: copy_to_clipboard
+
+# --- 子菜单结构 ---
+parent_menu:
+  id: sectools-root
+  title: "SecTools 工具箱"
+  contexts: [selection]
+  children:
+    - id: encode-group
+      title: "编码/解码"
+      type: separator
+      children:
+        - base64-decode-selection
+        - base64-encode-selection
+        - url-decode-selection
+        - url-encode-selection
+        - unicode-decode-selection
+        - hex-decode-selection
+    - id: format-group
+      title: "格式化"
+      type: separator
+      children:
+        - json-format-selection
+    - id: crypto-group
+      title: "哈希"
+      type: separator
+      children:
+        - hash-sha256-selection
+    - id: time-group
+      title: "时间"
+      type: separator
+      children:
+        - timestamp-convert-selection
+
+# --- Service Worker 契约 ---
+background:
+  file: src/background/index.ts
+  operations:
+    - name: setupContextMenus
+      description: 在 chrome.runtime.onInstalled 中注册所有菜单
+    - name: handleContextMenuClick
+      description: >
+        监听 chrome.contextMenus.onClicked，调用对应工具函数，
+        将结果写入剪贴板并通过 chrome.notifications 提示
+      input:
+        info: chrome.contextMenus.OnClickData
+        tab: chrome.tabs.Tab | undefined
+      handlers:
+        - pattern: "menuItemId starts with 'sectools:'"
+        - extractAction: parse menuItemId and call corresponding util function
+      on_success:
+        - copy_to_clipboard(result)
+        - show_notification("操作成功", result_preview)
+
+# --- 剪贴板契约 ---
+clipboard:
+  strategy: "navigator.clipboard.writeText"  # 优先
+  fallback: "document.execCommand('copy')"   # HTTP 页面降级
+  max_preview_length: 100  # 通知中显示的结果预览长度
+
+# --- 配置存储 ---
+storage:
+  key: "sectools_context_menu_settings"
+  schema:
+    enabled: boolean [default: true]  # 是否启用右键菜单
+    show_notification: boolean [default: true]  # 是否弹通知
+    auto_copy: boolean [default: true]  # 是否自动复制
+
+# --- 权限 ---
+permissions:
+  - contextMenus  # chrome.contextMenus API
+  - clipboardWrite  # 写入剪贴板
+  - notifications  # 弹通知（可选）
+  - storage  # 存储用户偏好

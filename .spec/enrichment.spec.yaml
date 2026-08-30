@@ -1,0 +1,106 @@
+# ============================================================
+# 模块：情报富化（免费 API + 本地实现）
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: enrichment
+  name: 研判情报富化
+  description: >
+    AI 研判前自动查询免费公开情报源（abuse.ch 三件套 / CISA KEV / NVD /
+    Cloudflare DoH / 本地 ip2region IP 归属），命中结果注入 system prompt。
+    Key 型数据源（VirusTotal / AbuseIPDB / urlscan.io）未配置 Key 时自动
+    跳过该源，不影响其他富化源与 AI 研判主流程（裁切原则）。
+
+# --- 设计决策 ---
+design_decisions:
+  key_gating: >
+    Key 型源在 resolveActiveSources() 中按 Key 是否为空裁切（false = 跳过），
+    UI 摘要中标注"未配置 API Key，已跳过"；本地能力（IP 归属）不依赖
+    任何 Key，永远可用。
+  rate_limit: >
+    免费档普遍限速（VT 4 次/分、NVD 无 Key 5 次/30s）：逐源串行查询 +
+    结果缓存（IOC 24h / DoH 1h / NVD 7d，storage 上限 200 条按时间淘汰）+
+    每类 IOC 单次最多查 3 条。
+  privacy: >
+    仅外查公网 IOC；内网/保留地址（10/8、172.16/12、192.168/16、127、
+    169.254、0/8）不出网。
+
+# --- 功能契约 ---
+features:
+
+  sources:
+    description: 数据源清单
+    no_key_required:
+      - "URLhaus（urlhaus-api.abuse.ch/v1/host）— 恶意 URL 分发域名"
+      - "ThreatFox（threatfox-api.abuse.ch/api/v1）— IOC 关联家族/APT"
+      - "MalwareBazaar（mb-api.abuse.ch/v1 get_info）— 样本哈希家族"
+      - "CISA KEV（cisa.gov known_exploited_vulnerabilities.json，feed 缓存 24h）"
+      - "NVD API 2.0（cveId 查询，缓存 7 天）"
+      - "Cloudflare DoH（dns-query JSON，A 记录与工单 IP 交叉验证标注）"
+      - "本地 ip2region（扩展内置离线库，IP 归属，无网络无 Key）"
+    key_required:
+      - "VirusTotal v3（x-apikey）— IP/域名/哈希 报毒统计"
+      - "AbuseIPDB v2（Key header）— 信心分 ≥20 输出"
+      - "urlscan.io（API-Key）— domain:/ip: 检索计数"
+
+  enrichmentFlow:
+    description: 富化流程（aiAnalyze 内，MCP 富化之后）
+    steps:
+      1. resolveActiveSources(cfg) 裁定生效源（总开关 + 源开关 + Key 裁切）
+      2. pickIocsForEnrich(text) 提取限量 IOC（内网/保留地址与本地域名过滤）
+      3. 逐源串行查询（缓存命中免请求；单请求 8s 超时；单源失败静默跳过）
+      4. 命中行格式化为 Markdown 小节，拼接引导语注入 {{content}} 之后
+      5. 返回 summary[{source, queried, hits, skipped?}] 供 UI 展示
+    context_guidance: >
+      注入引导语明确："已知恶意/被利用条目应显著提升风险定级；
+      未命中不代表安全"——避免 AI 把情报缺失当作低危信号。
+
+  chatUi:
+    description: 聊天界面摘要
+    behavior: >
+      命中源显示系统消息 "📡 情报富化：URLhaus 命中 2、ThreatFox 命中 1…"；
+      跳过源记入日志（不在 UI 打扰）。
+
+  settingsUi:
+    description: 设置页「情报富化」区块（MCP 之后）
+    controls:
+      - 总开关（Chrome 风格 Toggle）
+      - 7 个免 Key 源独立开关
+      - 3 个 Key 输入（password，占位符含注册地址与免费额度说明；
+        未配置显示"未配置（跳过）"，已配置显示绿色 ✓）
+    footnote: 缓存策略与限量说明
+
+# --- 类型与设置 ---
+types:
+  EnrichmentConfig:
+    enabled: boolean
+    urlhaus / threatfox / malwareBazaar / kev / nvd / doh / ipLocale: boolean
+    vtApiKey / abuseIpdbKey / urlscanKey: string  # 空 = 跳过
+
+settings_additions:
+  aiConfig.enrichment:
+    type: EnrichmentConfig
+    default: 全部开关 true，三个 Key 为空串
+    schema_version: 7  # v6 → v7 迁移自动补默认
+
+# --- 验收标准 ---
+acceptance_criteria:
+  - AC1: 免 Key 源默认启用，研判含已知恶意 IOC 时上下文出现对应小节，AI 结论引用该情报
+  - AC2: 工单含 CVE 时自动比对 CISA KEV 并（命中时）显著标注修复优先级
+  - AC3: 域名经 DoH 解析后若 A 记录与工单 IP 一致，标注"域名与 IP 关联确认"
+  - AC4: IP 归属来自本地 ip2region，断网可用，不依赖任何 Key
+  - AC5: 三个 Key 均为空时研判正常完成，仅 Key 型源跳过（日志/UI 摘要可见原因）
+  - AC6: 配置任一 Key 后对应源立即生效
+  - AC7: 同一 IOC 24h 内重复研判不重复外查（缓存命中）
+  - AC8: 单源故障/超时不阻断研判与其他源
+  - AC9: 内网/保留地址不出网查询
+  - AC10: 老用户升级 schema v6→v7 自动补 enrichment 默认值
+
+# --- 技术备注 ---
+technical_notes: |
+  1. 引擎位于 src/background/enrichment.ts；resolveActiveSources 与
+     pickIocsForEnrich 为纯函数（单测覆盖 Key 裁切/内网过滤/限量）
+  2. 缓存与 KEV feed 存 chrome.storage.local（enrichCache / enrichKevFeed）
+  3. abuse.ch 接口为 form/json POST；Cloudflare DoH 需 accept: application/dns-json
+  4. 聊天 UI 摘要位于 chat-widget.ts doSend（enrichSummary 字段）

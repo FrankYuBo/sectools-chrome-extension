@@ -1,0 +1,66 @@
+# ============================================================
+# 模块：IOC 检测增强 — IDN 同形异义域名
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: ioc-idn-detection
+  name: IDN 国际化域名识别（含同形异义字符）
+  description: >
+    域名 IOC 正则与校验器支持国际化域名（IDN）label 字符，
+    完整提取含希腊/西里尔/拉丁扩展字符的仿冒域名（如 gοogle.com、
+    аpple-id.com），供 URL 分析入口与同形异义字检测使用。
+
+# --- 问题背景 ---
+background: >
+  原 domain 正则字符类 [a-zA-Z0-9-] 仅 ASCII：gοogle.com（ο 为希腊
+  U+03BF）中引擎滑到 o 才匹配，提取出 ogle.com；аpple-id.com（西里尔
+  а 开头）因 \b 词边界（基于 ASCII \w）在非 ASCII 开头处不成立，
+  截断为 pple-id.com。入口截断导致后续同形字检测全链路失效。
+
+# --- 功能契约 ---
+features:
+
+  idnLabelCharset:
+    description: 抽取常量 IDN_LABEL_CHARS（正则与校验器共用）
+    ranges:
+      - "\u00C0-\u024F  拉丁扩展（à é ñ 及 Extended-A/B）"
+      - "\u0370-\u052F  希腊 / 科普特 / 西里尔 / 西里尔补充"
+      - "\u1E00-\u1EFF  拉丁扩展增补（越南语等）"
+    exclusions: >
+      刻意排除 CJK（\u4E00+）/假名/谚文——防止中文正文被误吞入"域名"
+
+  domainRegex:
+    before: '\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\b'
+    after: >
+      (?<![IDN-])(?:[IDN](?:[IDN-]{0,61}[IDN])?\.)+[a-zA-Z]{2,}\b
+      开头 \b 改为负向后行断言（兼容非 ASCII 开头的域名），
+      结尾保持 \b（TLD 恒为 ASCII 字母）
+
+  validatorSync:
+    description: isValidDomain 的 label 校验使用同一字符集（否则正则命中后仍被 validator 拒绝）
+    tld_rule: 保持 ^[a-zA-Z]{2,}$（IDN TLD 罕见）
+
+# --- 回归测试 ---
+tests:
+  file: src/__tests__/ioc-detector.test.ts
+  cases:
+    - "gοogle.com（希腊ο）/ аpple-id.com（西里尔а）单独输入完整提取"
+    - "中文句中混排：中文不误吞、域名完整提取"
+    - "cafè-login.com（拉丁变体）完整提取"
+    - "纯中文不得误判为域名"
+
+# --- 验收标准 ---
+acceptance_criteria:
+  - AC1: 选中 gοogle.com 点「URL 分析」，目标是完整域名而非 ogle.com
+  - AC2: 非 ASCII 开头域名（аpple-id.com）不截断
+  - AC3: 中文文本不产生域名误报
+  - AC4: 同形异义字检测基于完整域名命中（ο (U+03BF) → 看似 o）
+
+# --- 技术备注 ---
+technical_notes: |
+  1. 实现位于 src/utils/builtin-regex.ts（IDN_LABEL_CHARS + isValidDomain）
+  2. URL 分析面板 hostname 显示 xn-- punycode 属浏览器 URL API 正常行为，
+     同形字警告基于原始输入检测
+  3. email 正则暂未同步 IDN（IDN 邮箱罕见，按需后补）
+  4. 测试样例见 mock-tickets.html SOC-2026-0893

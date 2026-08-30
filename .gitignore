@@ -1,0 +1,18 @@
+node_modules/
+dist/
+*.zip
+.DS_Store
+
+# 导出的配置文件（含 API Key，严禁入库）
+.files/
+
+# 公众号文章素材（本地维护）
+wechat-article/
+
+# 内部验收文档（含本机环境信息，不对外发布）
+ALL-ACCEPTANCE-REPORT.md
+AI-ACCEPTANCE-REPORT.md
+ACCEPTANCE-REPORT.md
+
+# 本地临时
+*.log

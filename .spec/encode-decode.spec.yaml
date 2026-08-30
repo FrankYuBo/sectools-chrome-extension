@@ -1,0 +1,186 @@
+# ============================================================
+# 模块 1：编解码
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: encode-decode
+  name: 编解码
+  description: >
+    提供常用的编码与解码功能，涵盖 Base 系列、URL、Hex、
+    Unicode Escape、HTML Entity。支持链式多层解码。
+
+# --- 功能契约 ---
+features:
+
+  base64:
+    description: Base64 编码解码，支持标准/URL安全两种模式
+    operations:
+      - name: base64Encode
+        description: 文本 → Base64
+        input:
+          text: string [required]
+          variant: "'standard' | 'urlsafe'" [default: standard]
+        output:
+          success:
+            encoded: string
+        errors:
+          - EMPTY_INPUT
+      - name: base64Decode
+        description: Base64 → 文本。自动检测并修复 padding
+        input:
+          text: string [required]
+        output:
+          success:
+            decoded: string
+            detected_variant: "'standard' | 'urlsafe'"
+        errors:
+          - EMPTY_INPUT
+          - INVALID_BASE64
+
+  base32:
+    description: Base32 编解码（RFC 4648）
+    operations:
+      - name: base32Encode
+        input: { text: "string [required]" }
+        output: { success: { encoded: "string" }, errors: [EMPTY_INPUT] }
+      - name: base32Decode
+        input: { text: "string [required]" }
+        output: { success: { decoded: "string" }, errors: [EMPTY_INPUT, INVALID_BASE32] }
+
+  base16:
+    description: Base16 / Hex 编解码
+    operations:
+      - name: hexEncode
+        input: { text: "string [required]" }
+        output: { success: { encoded: "string" }, errors: [EMPTY_INPUT] }
+      - name: hexDecode
+        input: { text: "string [required]", separator: "string | null [default: null]" }
+        output: { success: { decoded: "string" }, errors: [EMPTY_INPUT, INVALID_HEX] }
+
+  urlEncodeDecode:
+    description: URL 编解码（encodeURIComponent / decodeURIComponent）
+    operations:
+      - name: urlEncode
+        input: { text: "string [required]" }
+        output: { success: { encoded: "string" }, errors: [EMPTY_INPUT] }
+      - name: urlDecode
+        input: { text: "string [required]" }
+        output: { success: { decoded: "string" }, errors: [EMPTY_INPUT, INVALID_URI] }
+
+  unicodeEscape:
+    description: Unicode 转义序列编解码（\uXXXX, \xXX, \UXXXXXXXX）
+    operations:
+      - name: unicodeEscapeEncode
+        description: 将非 ASCII 字符转为 \uXXXX 形式
+        input: { text: "string [required]" }
+        output: { success: { encoded: "string" }, errors: [EMPTY_INPUT] }
+      - name: unicodeEscapeDecode
+        description: 解码 \uXXXX, \xXX, \UXXXXXXXX, %uXXXX 等格式
+        input: { text: "string [required]" }
+        output: { success: { decoded: "string" }, errors: [EMPTY_INPUT] }
+
+  htmlEntity:
+    description: HTML 实体编解码
+    operations:
+      - name: htmlEntityEncode
+        input: { text: "string [required]" }
+        output: { success: { encoded: "string" }, errors: [EMPTY_INPUT] }
+      - name: htmlEntityDecode
+        description: 解码 &lt; &#60; &#x3c; 等格式
+        input: { text: "string [required]" }
+        output: { success: { decoded: "string" }, errors: [EMPTY_INPUT] }
+
+  jwtDecode:
+    description: JWT Token 解码（不解签名，仅解析 header + payload）
+    operations:
+      - name: jwtDecode
+        input: { token: "string [required]" }
+        output:
+          success:
+            header: "Record<string, unknown>"
+            payload: "Record<string, unknown>"
+            signature_raw: "string"
+          errors:
+            - EMPTY_INPUT
+            - NOT_JWT_FORMAT  # 不含两个点的不是 JWT
+        examples:
+          - input: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.xxx"
+            output:
+              header: { "alg": "HS256" }
+              payload: { "sub": "1234" }
+
+  multiLayerDecode:
+    description: >
+      多层解码引擎。自动检测当前文本的编码格式，逐层解码直至
+      无法继续识别。用于分析被多次编码的攻击 payload。
+    operations:
+      - name: multiLayerDecode
+        input: { text: "string [required]", max_depth: "number [default: 10]" }
+        output:
+          success:
+            layers:
+              type: "Array<{ layer: number, detected: string, result: string }>"
+          errors: [EMPTY_INPUT, MAX_DEPTH_EXCEEDED]
+    detection_order:
+      - base64  # 检测 Base64 模式
+      - url_encoded  # 含 %XX 模式
+      - hex  # 纯十六进制
+      - unicode_escape  # \uXXXX 模式
+      - html_entity  # &#XX; 模式
+
+# --- UI 契约 ---
+ui:
+  layout: tab
+  tab_config:
+    id: encode-decode
+    label: 编解码
+    icon: "🔤"
+    description: "Base64/URL/Hex/Unicode/HTML"
+
+  sub_tabs:
+    - id: base64
+      label: "Base64"
+    - id: base32
+      label: "Base32"
+    - id: hex
+      label: "Hex"
+    - id: url
+      label: "URL"
+    - id: unicode
+      label: "Unicode"
+    - id: html-entity
+      label: "HTML实体"
+    - id: jwt
+      label: "JWT"
+    - id: multi-layer
+      label: "多层解码"
+
+  component_interface:
+    props:
+      inputText: string
+      outputText: string
+      selectedSubTab: string  # 当前激活的子 tab
+      onInputChange: (val: string) => void
+      onEncode: () => void
+      onDecode: () => void
+      onCopy: (text: string) => void
+    state:
+      direction: "'encode' | 'decode'"  # 编码/解码切换
+      error: string | null
+      metadata: Record<string, string> | null
+
+# --- 测试契约 ---
+tests:
+  - case: "base64 round-trip"
+    given: text = "Hello 世界"
+    when: base64Encode → base64Decode
+    then: decoded === "Hello 世界"
+  - case: "url decode double-encoded"
+    given: text = "%253Cscript%253E"
+    when: urlDecode → urlDecode
+    then: result === "<script>"
+  - case: "jwt decode"
+    given: token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.abc"
+    when: jwtDecode
+    then: header.alg === "HS256" && payload.sub === "1234"

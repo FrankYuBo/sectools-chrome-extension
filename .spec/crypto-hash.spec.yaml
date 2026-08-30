@@ -1,0 +1,160 @@
+# ============================================================
+# 模块 2：加密与哈希
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: crypto-hash
+  name: 加密与哈希
+  description: >
+    纯本地加解密与哈希计算。哈希使用 Web Crypto API subtle.digest，
+    对称加密使用 subtle.encrypt/decrypt。不上传任何数据。
+
+# --- 功能契约 ---
+features:
+
+  hash:
+    description: 计算文本或文件的哈希值
+    operations:
+      - name: computeHash
+        description: 计算哈希（支持文本和 ArrayBuffer）
+        input:
+          data: "string | ArrayBuffer [required]"
+          algorithm: "'MD5' | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512'" [required]
+          encoding: "'hex' | 'base64'" [default: hex]
+        output:
+          success:
+            hash: string
+            algorithm_used: string
+          errors:
+            - EMPTY_INPUT
+            - UNSUPPORTED_ALGORITHM
+        notes: >
+          MD5 和 SHA-1 在 Web Crypto API 中不可用，需用第三方纯 JS 实现
+          （如 spark-md5, js-sha1）。SHA-256/384/512 使用 crypto.subtle.digest。
+
+      - name: computeHMAC
+        description: HMAC 哈希消息认证码
+        input:
+          data: "string [required]"
+          key: "string [required]"
+          algorithm: "'SHA-256' | 'SHA-384' | 'SHA-512'" [default: SHA-256]
+          encoding: "'hex' | 'base64'" [default: hex]
+        output:
+          success:
+            hmac: string
+          errors:
+            - EMPTY_INPUT
+            - EMPTY_KEY
+
+  symmetricEncryption:
+    description: 对称加密（AES-GCM / AES-CBC）
+    operations:
+      - name: aesEncrypt
+        description: AES 加密
+        input:
+          plaintext: "string [required]"
+          key: "string [required]"  # hex 编码的 key 或密码短语
+          mode: "'GCM' | 'CBC'" [default: GCM]
+          key_derivation: "'raw' | 'pbkdf2'" [default: pbkdf2]
+        output:
+          success:
+            ciphertext: string  # Base64 编码的密文
+            iv: string  # 使用的 IV
+            mode_used: string
+          errors:
+            - EMPTY_INPUT
+            - EMPTY_KEY
+            - KEY_LENGTH_INVALID  # AES 要求 128/192/256 bit
+
+      - name: aesDecrypt
+        description: AES 解密
+        input:
+          ciphertext: "string [required]"  # Base64 密文
+          key: "string [required]"
+          iv: "string [required]"  # Base64 IV
+          mode: "'GCM' | 'CBC'" [default: GCM]
+          key_derivation: "'raw' | 'pbkdf2'" [default: pbkdf2]
+        output:
+          success:
+            plaintext: string
+          errors:
+            - EMPTY_INPUT
+            - INVALID_CIPHERTEXT
+            - DECRYPT_FAILED
+
+# --- UI 契约 ---
+ui:
+  layout: tab
+  tab_config:
+    id: crypto-hash
+    label: 哈希加密
+    icon: "🔐"
+    description: "Hash/AES/HMAC"
+
+  sub_tabs:
+    - id: hash
+      label: "哈希计算"
+      fields:
+        - name: algorithm
+          type: select
+          options: ["MD5", "SHA-1", "SHA-256", "SHA-384", "SHA-512"]
+        - name: encoding
+          type: select
+          options: ["hex", "base64"]
+        - name: input
+          type: textarea | file-drop
+    - id: hmac
+      label: "HMAC"
+      fields:
+        - name: algorithm
+          type: select
+          options: ["SHA-256", "SHA-384", "SHA-512"]
+        - name: key
+          type: password-input
+        - name: data
+          type: textarea
+    - id: aes
+      label: "AES"
+      fields:
+        - name: mode
+          type: select
+          options: ["GCM", "CBC"]
+        - name: key
+          type: password-input
+          placeholder: "16/24/32 字节密钥"
+        - name: iv
+          type: text-input
+          placeholder: "CBC 模式需提供 IV"
+        - name: direction
+          type: toggle
+          options: ["encrypt", "decrypt"]
+
+  component_interface:
+    props:
+      activeSubTab: string
+      inputText: string
+      outputText: string
+      algorithm: string
+      encoding: "'hex' | 'base64'"
+      hmacKey: string
+      aesKey: string
+      aesIv: string
+      aesMode: "'GCM' | 'CBC'"
+    events:
+      onInputChange: (val: string) => void
+      onCompute: () => void
+      onEncrypt: () => void
+      onDecrypt: () => void
+      onCopy: () => void
+
+# --- 测试契约 ---
+tests:
+  - case: "SHA-256 hash"
+    given: data = "hello"
+    when: computeHash(data, "SHA-256", "hex")
+    then: hash === "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+  - case: "HMAC-SHA-256"
+    given: data = "message", key = "secret"
+    when: computeHMAC(data, key, "SHA-256", "hex")
+    then: hmac 长度为 64 字符（hex）

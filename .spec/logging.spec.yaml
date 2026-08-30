@@ -1,0 +1,66 @@
+# ============================================================
+# 模块：运行日志系统
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: logging
+  name: 运行日志
+  description: >
+    轻量环形缓冲日志（500 条），带时间戳/级别/模块标签，
+    支持一键复制与控制台导出，用于问题排查与用户反馈。
+
+# --- 功能契约 ---
+features:
+
+  logger:
+    description: 环形缓冲内存日志 + SW 侧持久化聚合
+    api:
+      - "log.info/warn/error(tag, msg, detail?)"
+      - "exportLogs(): string — 仅当前上下文条目"
+      - "exportAllLogs(): Promise<string> — 合并 SW 持久化日志（按 ts 排序去重）"
+      - "copyLogs(): Promise<boolean> — 基于 exportAllLogs，clipboard + execCommand 兜底"
+      - "getSwLogs(): Promise<LogEntry[]> — 读取 SW 持久化日志（storage key: sectoolsLogs）"
+      - "clearLogs(): Promise<void> — 清空本地 + SW 持久化"
+    ring_buffer: 500 entries（内存与 SW 持久化各自上限）
+    sw_persistence: >
+      Service Worker 上下文（无 window）push 时 debounce 500ms 批量写入
+      chrome.storage.local；content 侧经 sec:logs-export 消息拉取合并
+    detail_serialization: >
+      string 截断至 2000 字符；对象 JSON.stringify 后截断；失败降级 String()
+    console_mirror: 同步输出 console.log/warn/error（[SecTools:tag] 前缀）
+    console_api: >
+      __sectools_logs() 打印本地 / .copy() 复制合并全量 / .all() 打印全量 /
+      .export() / .clear()。仅扩展上下文可用（content isolated world / SW console）；
+      页面主世界不可见属 Chrome 安全模型，DevTools 需切换 context（设计约定，非缺陷）
+
+  copyLogsButton:
+    description: 聊天组件每条错误消息旁的「复制日志」按钮
+    behavior: 点击复制全量日志，按钮短暂显示「已复制 ✓」反馈
+
+  coverage:
+    description: 关键链路日志埋点
+    tags:
+      - ai-trigger: 触发研判（选中长度/父选择器/是否携带锚点）
+      - ai-extract: 父选择器提取（匹配结果/标签/长度/失败原因含锚点信息）
+      - ai-send: 聊天发送（文本长度/历史条数/MCP 自动调用）
+      - ai: background AI 调用（URL/模型/消息数/HTTP 状态/超时与网络错误分类）
+      - mcp: 连接/工具列表/工具调用参数与耗时/参数匹配失败
+      - unshorten: 每跳详情/降级原因/环检测/HTTP→HTTPS 弹回死局
+
+# --- 验收标准 ---
+acceptance_criteria:
+  - AC1: 各 tag 关键事件产生带时间戳日志，同步镜像到 console
+  - AC2: 缓冲上限 500 条，FIFO 淘汰
+  - AC3: 聊天错误消息旁「复制日志」复制的文本包含 SW 侧日志（ai/mcp/unshorten）与 content 侧日志（按时间合并）
+  - AC4: __sectools_logs 系列函数在扩展上下文（content isolated world / SW console）可用
+  - AC5: 超长 detail 截断至 2000 字符，不撑爆内存
+  - AC6: clearLogs 同时清空本地与 SW 持久化
+
+# --- 技术备注 ---
+technical_notes: |
+  1. 实现位于 src/utils/logger.ts，无第三方依赖，content/SW 上下文通用
+  2. SW 持久化 debounce 500ms；跨上下文合并以 (ts,tag,msg) 去重
+  3. sec:logs-export 消息由 SW 处理，返回 storage 中的 SW 日志数组
+  4. copyLogs 的 execCommand 兜底仅在存在 document 的上下文生效
+  5. 导出格式：[MM-DD HH:mm:ss.SSS][LEVEL][tag] msg ↳ detail（detail 缩进续行）

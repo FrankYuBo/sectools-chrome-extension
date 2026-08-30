@@ -1,0 +1,201 @@
+# ============================================================
+# 模块 11：高级配置页（独立标签页 + Tab 自定义）
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: advanced-settings
+  name: 高级配置
+  description: >
+    独立的浏览器标签页配置中心，包含所有设置的完整管理，
+    以及 Tab 面板的显示/隐藏与排序功能。
+
+# --- 功能契约 ---
+features:
+
+  settingsPage:
+    description: 通过 chrome.tabs.create 打开的独立配置页
+    behavior: >
+      1. 当前 Popup 设置面板底部新增「更多配置」按钮
+      2. 点击后通过 chrome.tabs.create 打开扩展内部的 settings.html
+      3. settings.html 是一个独立的全功能配置页面（非 Popup 内嵌）
+      4. 页面包含当前设置面板所有配置 + 新增配置项
+      5. 配置实时保存到 chrome.storage.local，与 Popup 共享
+
+    sections:
+      - id: appearance
+        title: 外观
+        fields:
+          - key: themeMode
+            type: radio-group
+            label: 主题模式
+            options:
+              - { value: system, label: "跟随系统" }
+              - { value: light,  label: "亮色" }
+              - { value: dark,   label: "暗色" }
+
+      - id: behavior
+        title: 行为
+        fields:
+          - key: autoCopyResult
+            type: toggle
+            label: 自动复制结果
+          - key: maxDecodeDepth
+            type: number-input
+            label: 最大解码层数
+            min: 1
+            max: 20
+          - key: defaultHashAlgorithm
+            type: select
+            label: 默认哈希算法
+            options: [MD5, SHA-1, SHA-256, SHA-384, SHA-512]
+          - key: indentSize
+            type: number-input
+            label: JSON 缩进
+            min: 1
+            max: 8
+          - key: timestampDefaultUnit
+            type: select
+            label: 默认时间戳单位
+            options: [s, ms, us, ns, auto]
+
+      - id: selection-toolbar
+        title: 选中文本工具栏
+        fields:
+          - key: selectionToolbarEnabled
+            type: toggle
+            label: 启用浮动工具栏
+          - key: selectionToolbarRules
+            type: textarea
+            label: 白名单规则
+            description: "一行一条，支持域名/通配符/CIDR/正则"
+          - key: selectionToolbarBlockRules
+            type: textarea
+            label: 黑名单规则
+
+      - id: intel-defaults
+        title: 情报源默认勾选
+        fields:
+          - key: defaultIntelSources
+            type: checkbox-group
+            label: 默认勾选的情报源
+            options:
+              - virustotal
+              - threatbook
+              - alienvault
+              - hybrid-analysis
+              - urlscan
+              - abuseipdb
+              - shodan
+              - censys
+              - anyrun
+              - triage
+              - intezer
+              - virusshare
+
+      - id: tab-customization
+        title: 面板排序与显示
+        description: >
+          控制 Popup 中 Tab 栏的面板显示顺序和可见性。
+          核心面板不可隐藏；其余面板可自由开关。
+          至少保留 6 个可见面板。
+        fields:
+          - key: tabOrder
+            type: ordered-list
+            label: 面板排序
+            items:
+              - { id: intel,     label: 威胁情报,  core: true }
+              - { id: url,       label: URL分析,    core: true }
+              - { id: encode,    label: 编解码,     core: true }
+              - { id: crypto,    label: 加密哈希,   core: true }
+              - { id: regex,     label: 正则,       core: true }
+              - { id: network,   label: 网络,       core: true }
+              - { id: format,    label: 格式化,     core: false }
+              - { id: timestamp, label: 时间转换,   core: false }
+              - { id: number,    label: 进制转换,   core: false }
+              - { id: generator, label: 生成器,     core: false }
+            controls: up-down-arrows
+
+  tabCustomization:
+    description: Tab 面板排序与隐藏功能
+
+    rules:
+      - 核心 Tab 不可隐藏（标记 core: true）
+      - 核心列表：intel, url, encode, crypto, regex, network（共 6 个）
+      - 非核心 Tab 可自由隐藏/显示
+      - 至少保留 6 个可见面板（由于核心 6 个不可隐藏，此约束自动满足）
+      - 排序通过 ↑↓ 按钮实现，支持移到顶/底
+
+    storage:
+      - key: tabOrder
+        type: string[]
+        description: Tab ID 的有序数组，决定 Tab 栏从左到右的顺序
+        default: ["intel","url","encode","crypto","regex","network","format","timestamp","number","generator"]
+      - key: hiddenTabs
+        type: string[]
+        description: 被隐藏的 Tab ID 数组
+        default: []
+
+    validation:
+      - 隐藏 Tab 数量 + 可见 Tab 数量 = 全部 Tab 数量
+      - 核心 Tab 不得出现在 hiddenTabs 中
+      - tabOrder 必须包含所有 Tab ID（含隐藏的）
+
+    behavior: >
+      1. App.tsx 启动时读取 tabOrder 和 hiddenTabs
+      2. 过滤 hiddenTabs 后按 tabOrder 渲染 Tab 栏
+      3. 设置页中展示全量 Tab 列表，每个条目有：
+         - 可见性开关（核心 Tab 禁用）
+         - ↑↓ 排序按钮
+      4. 修改即时保存，Popup 下次打开时生效（或通过 storage listener 热更新）
+
+# --- UI 契约 ---
+ui:
+  settings_page:
+    url: "chrome-extension://<id>/settings.html"
+    trigger: Popup 设置面板底部「更多配置」按钮
+    layout: full-page
+    width: 800px
+    theme: 与 Popup 一致（读取同一份 themeMode 设置）
+
+  settings_panel_button:
+    location: SettingsPanel 组件底部
+    text: "更多配置"
+    icon: arrow-right
+    action: chrome.tabs.create({ url: 'settings.html' })
+
+# --- 设置迁移 ---
+migration:
+  target_schema_version: 3
+  new_fields:
+    - key: tabOrder
+      type: string[]
+      default: ["intel","url","encode","crypto","regex","network","format","timestamp","number","generator"]
+    - key: hiddenTabs
+      type: string[]
+      default: []
+  auto_migrate: true
+  behavior: >
+    v2 → v3 迁移：检测到缺少 tabOrder 或 hiddenTabs 时，
+    自动补入默认值（不改变用户可见行为，新功能 opt-in）
+
+# --- 验收标准 ---
+acceptance_criteria:
+  - AC1: 点击「更多配置」按钮，在**新标签页**中打开配置页面
+  - AC2: 配置页面包含外观/行为/工具栏/情报源/Tab 排序所有设置区域
+  - AC3: 配置页面修改的设置与 Popup 设置面板**实时同步**
+  - AC4: Tab 排序区域展示全部 10 个面板，核心 6 个的隐藏开关为禁用态
+  - AC5: 点击 ↑↓ 按钮可调整面板顺序，保存后 Popup Tab 栏顺序同步更新
+  - AC6: 隐藏非核心面板后，Popup Tab 栏不再显示该面板
+  - AC7: 设置持久化到 chrome.storage.local，重启浏览器后保留
+  - AC8: 老用户升级后 tabOrder/hiddenTabs 自动补默认值，无破坏性变更
+
+# --- 技术备注 ---
+technical_notes: |
+  1. settings.html 需要在 vite.config.ts 的 rollupOptions.input 中注册
+  2. 配置页使用独立的入口 settings.html + settings/main.tsx
+  3. 配置页与 Popup 共享 utils/ 和 types/，复用 settings.ts 读写逻辑
+  4. App.tsx 中的 TABS 常量需改为从 settings 读取动态列表
+  5. Tab 排序状态变更通过 chrome.storage.onChanged 热更新（可选，重启 Popup 也生效）
+  6. 配置页需要完整的 Tailwind CSS 支持（独立构建入口）
+  7. 考虑未来 AI 研判 Tab 也加入 tabOrder（预留 generator 之后的扩展位）

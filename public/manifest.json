@@ -1,0 +1,62 @@
+{
+  "manifest_version": 3,
+  "name": "SecTools - 安全工具箱",
+  "version": "0.4.0",
+  "description": "安全运营/反入侵工程师工具集：选中文本一键解码/10家情报聚合/URL分析；编解码/哈希/格式化/时间/进制/生成器/网络工具箱/正则YaraSigma校验。纯本地运算，无数据上传。",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "src/popup/index.html",
+    "default_title": "SecTools",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "permissions": [
+    "clipboardWrite",
+    "storage",
+    "offscreen",
+    "notifications",
+    "tabs",
+    "webRequest"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "optional_permissions": [],
+  "background": {
+    "service_worker": "src/background/sw.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/content/index.ts"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "data/ip2region.db"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "minimum_chrome_version": "102"
+}

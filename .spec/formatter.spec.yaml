@@ -1,0 +1,149 @@
+# ============================================================
+# 模块 3：格式化与美化
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: formatter
+  name: 格式化与美化
+  description: >
+    JSON、Python dict/set/tuple/list 字面量识别与格式化、
+    XML、SQL 格式化、代码美化与压缩。
+
+# --- 功能契约 ---
+features:
+
+  jsonFormatter:
+    description: JSON 格式化、压缩、校验
+    operations:
+      - name: jsonFormat
+        description: JSON 美化格式化
+        input:
+          text: "string [required]"
+          indent_size: "number [default: 2]"
+          sort_keys: "boolean [default: false]"
+        output:
+          success:
+            formatted: string
+            key_count: number
+            depth: number
+          errors:
+            - EMPTY_INPUT
+            - INVALID_JSON
+
+      - name: jsonMinify
+        description: JSON 压缩为单行
+        input: { text: "string [required]" }
+        output:
+          success: { minified: "string", size_before: number, size_after: number }
+          errors: [EMPTY_INPUT, INVALID_JSON]
+
+      - name: jsonValidate
+        description: JSON 校验，返回具体错误位置
+        input: { text: "string [required]" }
+        output:
+          success:
+            valid: boolean
+            error_line: "number | null"
+            error_column: "number | null"
+            error_message: "string | null"
+
+  pythonLiteralFormatter:
+    description: >
+      识别并格式化 Python 字面量。安全场景常见：日志中 print 的
+      dict/list/set/tuple，需要识别后转为格式化的 JSON 或美化输出。
+    operations:
+      - name: pythonLiteralFormat
+        description: 尝试识别 Python 字面量并格式化
+        input:
+          text: "string [required]"
+          output_format: "'json' | 'python-pretty'" [default: json]
+        output:
+          success:
+            formatted: string
+            detected_type: "'dict' | 'list' | 'set' | 'tuple' | 'unknown'"
+            original_language: "'python' | 'unknown'"
+          errors: [EMPTY_INPUT, UNRECOGNIZED_FORMAT]
+        detection_rules:
+          - pattern: "^{.*}$"  → 尝试作为 dict
+          - pattern: "^\\[.*\\]$" → 尝试作为 list
+          - pattern: "^\\(.*\\)$" → 尝试作为 tuple
+          - pattern: "^\\{.*\\}$" (含重复 key) → 尝试作为 set
+        conversion:
+          - "None → null"
+          - "True/False → true/false"
+          - "单引号字符串 → 双引号字符串"
+          - "尾部逗号 → 移除"
+          - "set() → 转为数组 []"
+          - "tuple() → 转为数组 []"
+
+  sqlFormatter:
+    description: SQL 关键字大写 + 缩进格式化
+    operations:
+      - name: sqlFormat
+        input:
+          text: "string [required]"
+          dialect: "'standard' | 'mysql' | 'postgresql'" [default: standard]
+          keyword_case: "'upper' | 'lower'" [default: upper]
+        output:
+          success:
+            formatted: string
+          errors: [EMPTY_INPUT]
+
+  xmlFormatter:
+    description: XML 格式化
+    operations:
+      - name: xmlFormat
+        input: { text: "string [required]", indent_size: "number [default: 2]" }
+        output:
+          success: { formatted: "string" }
+          errors: [EMPTY_INPUT, INVALID_XML]
+
+# --- UI 契约 ---
+ui:
+  layout: tab
+  tab_config:
+    id: formatter
+    label: 格式化
+    icon: "📝"
+    description: "JSON/XML/SQL/Python"
+
+  sub_tabs:
+    - id: json
+      label: "JSON"
+      actions: [format, minify, validate]
+    - id: python
+      label: "Python字面量"
+      description: "print 输出的 dict/list 转为格式化 JSON"
+    - id: sql
+      label: "SQL"
+    - id: xml
+      label: "XML"
+
+  component_interface:
+    props:
+      selectedFormat: string
+      inputText: string
+      outputText: string
+      indentSize: number
+      sortKeys: boolean
+    events:
+      onFormat: () => void
+      onMinify: () => void
+      onValidate: () => void
+      onCopy: () => void
+
+# --- 测试契约 ---
+tests:
+  - case: "json format"
+    given: '{"b":2,"a":1}'
+    when: jsonFormat(text, { sort_keys: true })
+    then: contains '"a": 1' before '"b": 2'
+  - case: "python dict to json"
+    given: "{'user': 'admin', 'active': True, 'role': None}"
+    when: pythonLiteralFormat
+    then: output is valid JSON with "admin"/true/null
+  - case: "python list with trailing comma"
+    given: "[1, 2, 3,]"
+    when: pythonLiteralFormat
+    then: output is valid JSON array [1,2,3]

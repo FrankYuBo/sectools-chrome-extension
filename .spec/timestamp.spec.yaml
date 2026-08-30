@@ -1,0 +1,125 @@
+# ============================================================
+# 模块 4：时间转换
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: timestamp
+  name: 时间转换
+  description: >
+    Unix 时间戳（秒/毫秒/微秒/纳秒）与可读时间互转，
+    ISO 8601 / RFC 3339 格式转换，多时区支持。
+
+# --- 功能契约 ---
+features:
+
+  timestampToHuman:
+    description: 时间戳 → 可读日期
+    operations:
+      - name: timestampToHuman
+        input:
+          timestamp: "number | string [required]"
+          unit: "'s' | 'ms' | 'us' | 'ns' | 'auto'" [default: auto]
+          timezone: "string [default: 'local']"  # 'local' | 'UTC' | '+08:00' 等
+          format: "string [default: 'YYYY-MM-DD HH:mm:ss.SSS']"
+        output:
+          success:
+            datetime: string
+            iso8601: string
+            rfc3339: string
+            weekday: string  # 星期几
+            unit_detected: string  # auto 模式下的检测结果
+          errors:
+            - EMPTY_INPUT
+            - INVALID_TIMESTAMP
+            - INVALID_TIMEZONE
+        unit_auto_detection: >
+          ≤ 10^10 → 秒;
+          ≤ 10^13 → 毫秒;
+          ≤ 10^16 → 微秒;
+          > 10^16  → 纳秒
+
+  humanToTimestamp:
+    description: 可读日期 → 时间戳
+    operations:
+      - name: humanToTimestamp
+        input:
+          datetime: "string [required]"
+          unit: "'s' | 'ms'" [default: s]
+          timezone: "string [default: 'local']"
+        output:
+          success:
+            timestamp_s: number
+            timestamp_ms: number
+          errors:
+            - EMPTY_INPUT
+            - INVALID_DATETIME
+        accepted_formats:
+          - "2024-01-15"
+          - "2024-01-15 14:30:00"
+          - "2024-01-15T14:30:00Z"
+          - "2024-01-15T14:30:00+08:00"
+          - "Jan 15, 2024 14:30:00"
+          - "15/01/2024"
+
+  currentTimestamp:
+    description: 获取当前时间戳
+    operations:
+      - name: getCurrentTimestamp
+        input:
+          unit: "'s' | 'ms'" [default: s]
+        output:
+          success:
+            value: number
+            human: string
+
+  windowsFiletime:
+    description: Windows FILETIME ↔ 可读时间（100纳秒间隔，从 1601-01-01 起算）
+    operations:
+      - name: filetimeToHuman
+        input: { filetime: "number | string [required]" }
+        output:
+          success: { datetime: "string" }
+          errors: [EMPTY_INPUT, INVALID_FILETIME]
+      - name: humanToFiletime
+        input: { datetime: "string [required]" }
+        output:
+          success: { filetime: "number" }
+          errors: [EMPTY_INPUT, INVALID_DATETIME]
+
+# --- UI 契约 ---
+ui:
+  layout: tab
+  tab_config:
+    id: timestamp
+    label: 时间转换
+    icon: "🕐"
+    description: "时间戳/日期互转"
+
+  sub_tabs:
+    - id: ts-to-human
+      label: "时间戳 → 日期"
+    - id: human-to-ts
+      label: "日期 → 时间戳"
+    - id: filetime
+      label: "Windows FILETIME"
+    - id: current
+      label: "当前时间"
+
+  component_interface:
+    props:
+      result: string
+      currentTime: string
+    events:
+      onConvert: (text: string, unit: string, timezone: string) => void
+
+# --- 测试契约 ---
+tests:
+  - case: "timestamp seconds to human"
+    given: timestamp = 1700000000, unit = "s"
+    when: timestampToHuman
+    then: datetime starts with "2023-11-14"
+  - case: "human to timestamp"
+    given: datetime = "2024-01-15 00:00:00", timezone = "UTC"
+    when: humanToTimestamp
+    then: timestamp_s === 1705276800

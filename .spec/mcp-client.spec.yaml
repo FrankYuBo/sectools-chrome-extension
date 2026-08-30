@@ -1,0 +1,122 @@
+# ============================================================
+# 模块：MCP Client（插件作为客户端连接外部 MCP Server）
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: mcp-client
+  name: MCP 服务器集成
+  description: >
+    插件作为 MCP 客户端，通过 Streamable HTTP 传输连接外部 MCP Server。
+    AI 研判前自动调用已配置的 MCP 工具（如查询资产信息、威胁情报），
+    将结果注入研判上下文，实现"研判时自动富化"。
+
+# --- 设计决策 ---
+design_decisions:
+  transport: >
+    仅支持 Streamable HTTP 传输（POST + JSON-RPC 2.0，响应为 application/json
+    或一次性读完的 text/event-stream）。原因：
+    1) stdio 需要客户端 spawn 本地子进程，浏览器 Service Worker 沙箱无此能力；
+    2) 旧版 SSE 传输要求长连接（EventSource），SW 约 30s 不活跃会被终止，
+       且该传输已在 MCP 规范 2025-03-26 中废弃；
+    3) Streamable HTTP 每请求独立，契合 SW 生命周期。
+    stdio 型 MCP Server 可经 supergateway / mcp-proxy 桥接为 HTTP 后接入。
+  protocol_version: "2025-03-26"
+
+# --- 功能契约 ---
+features:
+
+  serverManagement:
+    description: 设置页「MCP 服务器」区块，管理 MCP Server 连接配置
+    fields:
+      - key: id
+        type: string
+        description: 唯一 ID（mcp-{timestamp}）
+      - key: name
+        type: string
+        label: 名称
+        placeholder: "如：资产 CMDB"
+      - key: url
+        type: string
+        label: URL
+        placeholder: "http://localhost:3001/mcp"
+      - key: authToken
+        type: string
+        label: Auth Token（可选）
+        description: 非空时以 Bearer 头发送
+      - key: enabled
+        type: toggle
+        description: Chrome 风格拨动开关（圆点右=开）
+      - key: autoCallTools
+        type: string[]
+        description: 研判时自动调用的工具名列表；空 = 不自动调用
+    actions:
+      - 测试连接：initialize + tools/list，成功后展示工具清单与数量
+      - 工具勾选：勾选的工具加入 autoCallTools（研判前自动执行）
+
+  messageTypes:
+    description: background 新增三条消息
+    messages:
+      - "sec:mcp-test-connection { serverId } → { serverName, toolCount, tools[] }"
+      - "sec:mcp-list-tools { serverId } → McpToolDefinition[]"
+      - "sec:mcp-call-tool { serverId, toolName, args } → McpToolResult"
+
+  autoEnrich:
+    description: AI 研判前自动富化上下文
+    behavior: >
+      1. 从研判文本提取 IOC（IPv4/域名/邮箱/哈希，简单正则即可）
+      2. 对每个 enabled 且 autoCallTools 非空的服务器：
+         initialize → tools/list → 对勾选工具做参数匹配
+      3. 参数匹配：依据工具参数名/描述关键词（ip/domain/host/url/email/hash/md5/
+         sha/ioc/indicator）将首个同型 IOC 填入对应参数
+      4. 调用命中的工具，成功结果拼接为
+         "以下是已查询到的资产/上下文信息…" 注入 {{content}} 之后
+      5. MCP 失败不阻断 AI 调用（降级为无富化，仅记日志）
+    chat_integration: >
+      响应携带 mcpResults[]，聊天界面以系统消息展示
+      "🔧 已通过 MCP 查询 N 个工具获取上下文信息"
+
+# --- 新增类型 ---
+types:
+  McpServerConfig:
+    id: string
+    name: string
+    url: string
+    authToken: string
+    enabled: boolean
+    autoCallTools: string[]
+  McpToolDefinition:
+    name: string
+    description: string
+    inputSchema: Record<string, unknown>
+  McpToolResult:
+    serverName: string
+    toolName: string
+    success: boolean
+    content: string
+    duration: number
+
+# --- AppSettings 新增字段 ---
+settings_additions:
+  aiConfig.mcpServers:
+    type: McpServerConfig[]
+    default: []
+    schema_version: 5  # v4 → v5 迁移自动补 []
+
+# --- 验收标准 ---
+acceptance_criteria:
+  - AC1: 设置页可增删改 MCP 服务器（名称/URL/Token/启用开关）
+  - AC2: 「测试连接」成功后显示可用工具数量与清单
+  - AC3: 可勾选若干工具为「研判时自动调用」
+  - AC4: 勾选后发送 AI 研判，后台先调用 MCP 工具再调 AI，MCP 结果注入 system prompt
+  - AC5: 聊天界面显示 MCP 查询摘要（成功数量）
+  - AC6: MCP 连接/调用失败不影响 AI 研判主流程
+  - AC7: 老用户升级 schema v4→v5 自动补 mcpServers: []
+
+# --- 技术备注 ---
+technical_notes: |
+  1. 实现位于 src/background/mcp-client.ts（JSON-RPC over fetch，SSE 响应流式解析一次读完）
+  2. initialize → notifications/initialized（fire-and-forget）→ tools/list → tools/call
+  3. 单请求超时 30s（AbortSignal.timeout）
+  4. 全链路日志 tag=mcp（连接/工具列表/调用参数与耗时/参数匹配失败原因）
+  5. 不支持 stdio/SSE 的原因见 design_decisions.transport

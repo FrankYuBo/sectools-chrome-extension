@@ -1,0 +1,78 @@
+# ============================================================
+# 模块：短链还原（增强版）
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: url-unshorten
+  name: 短链还原与跳转链路跟踪
+  description: >
+    浮动工具栏「URL 分析」面板的短链跟踪引擎：逐级降级容错
+    （HEAD→GET→HTTP 明文）、JS/Meta Refresh 解析、跳转环检测、
+    HTTP→HTTPS 弹回死局识别，并在 UI 透明展示完整跳转链路。
+
+# --- 功能契约 ---
+features:
+
+  trackingEngine:
+    description: 逐跳跟踪，每跳最多 20 次（DEFAULT_MAX_HOPS）
+    strategy: >
+      ① HEAD 请求（最快路径）
+      ② HEAD 网络层失败（含 TLS 证书过期/自签）→ 同 URL GET
+      ③ GET 仍失败且为 https:// → 降级 http:// 明文重试（hop 标注降级原因）
+      ④ HEAD 成功但非 3xx 且无 Location → 主动 GET 复核（部分短链不支持 HEAD）
+      ⑤ GET 200 text/html 无 Location → 解析 JS/Meta Refresh 跳转继续跟踪
+    redirect_parsing:
+      meta_refresh: '<meta http-equiv=refresh content="0;url=X">'
+      js: 'location.href= / location.replace() / window.open()（带引号形式）'
+      body_limit: 64KB
+    loop_detection: visited Set 判重，A→B→A 环安全终止
+    http_https_bounce_deadlock: >
+      识别"HTTP 降级被 301 弹回不可达的 HTTPS 原址"死局
+      （目标强制 HTTPS 且证书无效），立即终止并在 hop.note 说明
+      手动处理方式（浏览器打开→继续访问）
+    timeout: 单请求 10s（AbortSignal.timeout）
+
+  errorMessages:
+    description: 失败时抛出可操作的错误文案
+    timeout_error: "AI/网络类超时 → 列明可能原因（证书无效/网络不通/DNS）+ 浏览器禁止忽略证书说明"
+    network_error: "连接失败 → 附实际请求 URL 引导检查"
+
+  hopDataModel:
+    fields:
+      url: string          # 实际请求地址（http 降级后为准）
+      status: number
+      method: 'HEAD' | 'GET'
+      location: string     # 下一跳（HTTP Location 或 JS/Meta 目标）
+      note: string         # 降级/JS 跳转/死局标注
+
+  chainUi:
+    description: URL 分析面板「⟾ 跳转链路」区块
+    behavior: >
+      逐跳渲染：序号 + URL（终点加粗绿字）+ [状态码·方法] +
+      ↳ Location + ⚠ note（琥珀色）；有跳转记录即渲染（不依赖最终地址是否变化）
+    status_label:
+      changed: "短链还原 · N 跳（截断）"
+      blocked: "短链还原 · 跟踪受阻（见下方链路说明）"（琥珀色，finalUrl≈原始地址但有跳转意图）
+      no_redirect: "短链还原 · 无跳转"
+    normalization: >
+      "有无变化"比较忽略协议（http/https）与末尾斜杠，
+      避免仅证书降级被误报为"1 跳"
+
+# --- 验收标准 ---
+acceptance_criteria:
+  - AC1: 标准短链（单次/多次 302）完整还原并展示逐跳链路
+  - AC2: 证书过期短链域自动降级 HTTP；若被弹回 HTTPS 形成死局，明确标注原因与手动指引
+  - AC3: JS/Meta Refresh 跳转页可解析并继续跟踪
+  - AC4: 跳转环安全终止，不死循环
+  - AC5: HEAD 不支持（405/200 无 Location）的服务自动 GET 复核
+  - AC6: 终点自动追加 URL 结构拆解与同形字检测
+  - AC7: 失败错误信息含可操作排查建议；日志 tag=unshorten 记录每跳
+
+# --- 技术备注 ---
+technical_notes: |
+  1. 引擎位于 src/background/sw.ts unshortenUrl + extractJsOrMetaRedirect
+  2. UI 位于 src/content/index.ts renderUnshortenResult
+  3. 浏览器安全边界：扩展 fetch 无法忽略证书校验（host_permissions 仅豁免 CORS），
+     故证书失效站点只能降级 HTTP 或透明告知受阻，无法拿取 HTTPS 版响应头
+  4. 测试样例见 mock-tickets.html SOC-2026-0895（bit.ly 短链钓鱼场景）

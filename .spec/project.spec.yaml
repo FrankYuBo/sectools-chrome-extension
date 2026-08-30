@@ -1,0 +1,149 @@
+# ============================================================
+# SecTools - 程序员 & 安全工程师 Chrome 工具箱
+# 项目级规范文件
+# ============================================================
+apiVersion: sdd/v1
+kind: ProjectSpec
+metadata:
+  name: sectools-chrome-extension
+  version: 0.1.0
+  description: >
+    面向程序员和安全工程师（反入侵方向）的 Chrome 浏览器插件工具箱。
+    纯本地运算，不上传任何数据。提供编解码、哈希、格式化、时间转换、
+    进制转换等常用工具，支持 Popup 弹窗 + 右键菜单两种交互方式。
+
+# --- 架构约束 ---
+architecture:
+  type: chrome-extension-manifest-v3
+  ui_strategy: popup  # 弹窗式，非侧边栏
+  data_strategy: local-only  # 纯本地运算，无网络请求
+  tech_stack:
+    language: typescript
+    build_tool: vite
+    ui_framework: react  # 轻量组件
+    css: tailwindcss  # 快速原型样式
+    crypto: Web Crypto API  # 浏览器原生加密
+    storage: chrome.storage.local  # 配置持久化
+
+  # 负面约束（Harness 层强制执行）
+  negative_constraints:
+    - "禁止任何网络请求（fetch/XMLHttpRequest/WebSocket）"
+    - "例外：chrome.runtime.requestUpdateCheck() 允许调用（Chrome 内置 API，仅用于检查扩展更新）"
+    - "禁止使用 eval() 或 new Function()"
+    - "禁止在任何位置硬编码密钥或令牌"
+    - "所有字符串操作必须使用 TextEncoder/TextDecoder，禁止使用已废弃的 unescape()"
+    - "UI 层禁止直接操作 DOM，必须通过 React 状态管理"
+    - "禁止使用 any 类型，所有函数必须有明确类型签名"
+    - "禁止在组件中直接实现工具逻辑，必须调用 utils 层纯函数"
+    - "主题色值禁止硬编码在组件中，必须通过 CSS 变量 / Tailwind dark: 前缀引用"
+
+# --- 模块清单 ---
+modules:
+  - id: encode-decode
+    name: 编解码
+    spec: encode-decode.spec.yaml
+
+  - id: crypto-hash
+    name: 加密与哈希
+    spec: crypto-hash.spec.yaml
+
+  - id: formatter
+    name: 格式化与美化
+    spec: formatter.spec.yaml
+
+  - id: timestamp
+    name: 时间转换
+    spec: timestamp.spec.yaml
+
+  - id: number-base
+    name: 进制转换
+    spec: number-base.spec.yaml
+
+  - id: settings
+    name: 设置
+    spec: settings.spec.yaml
+
+  - id: version-update
+    name: 版本更新
+    spec: version-update.spec.yaml
+
+  - id: context-menu
+    name: 右键菜单
+    spec: context-menu.spec.yaml
+
+# --- 全局类型定义 ---
+global_types:
+  ToolResult:
+    description: 所有工具函数的统一返回类型
+    fields:
+      - name: success
+        type: boolean
+      - name: data
+        type: string
+      - name: error
+        type: string | null
+      - name: metadata
+        type: Record<string, string> | null
+        description: 额外信息（如编码检测类型、字符数等）
+
+  TabConfig:
+    description: 每个工具 Tab 的配置
+    fields:
+      - name: id
+        type: string
+      - name: label
+        type: string
+      - name: icon
+        type: string  # emoji 或 icon name
+      - name: description
+        type: string
+
+  ClipboardAction:
+    description: 右键菜单动作定义
+    fields:
+      - name: id
+        type: string
+      - name: title
+        type: string
+      - name: contexts
+        type: "('selection' | 'editable')[]"
+      - name: toolFn
+        type: string  # 对应的工具函数名
+
+  ThemeMode:
+    description: 主题模式
+    values:
+      - system  # 跟随系统
+      - light   # 强制亮色
+      - dark    # 强制暗色
+
+  UpdateCheckResult:
+    description: 版本更新检查结果
+    fields:
+      - name: hasUpdate
+        type: boolean
+      - name: currentVersion
+        type: string
+      - name: latestVersion
+        type: "string | null"
+      - name: lastCheckTime
+        type: number  # 上次检查时间戳(ms)
+
+  AppSettings:
+    description: 所有用户设置的持久化结构
+    fields:
+      - name: theme
+        type: ThemeMode
+        default: system
+      - name: lastUpdateCheck
+        type: number
+        default: 0  # 上次检查时间戳
+      - name: updateDismissedVersion
+        type: "string | null"
+        default: null  # 用户已忽略的更新版本号
+      - name: contextMenuEnabled
+        type: boolean
+        default: true
+      - name: autoCopy
+        type: boolean
+        default: true

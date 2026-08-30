@@ -1,0 +1,155 @@
+# ============================================================
+# 模块 7：设置
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: settings
+  name: 设置
+  description: >
+    用户偏好设置面板，管理主题模式（跟随系统/亮色/暗色）、
+    右键菜单开关、自动复制等全局配置。配置持久化到
+    chrome.storage.local，所有设置变更即时生效。
+
+# --- 功能契约 ---
+features:
+
+  migration:
+    description: 配置导出 / 导入（跨电脑迁移）
+    export:
+      ui: 设置页顶部「配置迁移」区块
+      format: >
+        JSON 文件 { app: 'sectools-chrome-extension', schemaVersion,
+        exportedAt, settings }，文件名 sectools-settings-YYYYMMDD.json
+      secret_handling: >
+        「包含敏感信息」勾选框（默认勾选 + 二次确认警告）：
+        不勾选时 sanitizeSettingsForExport 清空 aiConfig.apiKey /
+        enrichment 三个情报 Key / mcpServers[].authToken（深拷贝不改原值），
+        非敏感字段（URL/模型/开关/规则）全部保留
+    import:
+      validation: >
+        validateSettingsImport 校验：JSON 可解析 / app 标识匹配 /
+        settings 含 aiConfig；schemaVersion 允许低于当前（导入后由
+        loadSettings 迁移链自动升级，UI 提示"将自动升级迁移"）
+      flow: 选文件 → 校验 → 覆盖确认 → 写 storage（连同文件内版本号） → 页面刷新
+      same_file_reselect: input value 重置，允许重复选择同一文件
+
+  theme:
+    description: 主题模式管理（跟随系统 / 亮色 / 暗色）
+    modes:
+      - id: system
+        label: 跟随系统
+        description: 自动匹配操作系统亮暗色模式
+        implementation: "使用 CSS media query prefers-color-scheme"
+      - id: light
+        label: 亮色
+        description: 始终使用亮色主题
+        implementation: "强制 light 模式，忽略系统偏好"
+      - id: dark
+        label: 暗色
+        description: 始终使用暗色主题
+        implementation: "强制 dark 模式，忽略系统偏好"
+
+    operations:
+      - name: applyTheme
+        description: 将主题模式应用到 DOM
+        input:
+          mode: "ThemeMode [required]"
+        output: void
+        behavior: >
+          1. 在 <html> 上设置 data-theme 属性
+          2. system 模式：移除 data-theme，依赖 prefers-color-scheme
+          3. light 模式：data-theme="light"，强制亮色 CSS 变量
+          4. dark 模式：data-theme="dark"，强制暗色 CSS 变量
+
+      - name: getEffectiveTheme
+        description: 获取当前实际生效的主题（system 模式下检测系统偏好）
+        input: {}
+        output:
+          effective: "'light' | 'dark'"
+          mode: ThemeMode
+
+  settingsStorage:
+    description: 配置读写，基于 chrome.storage.local
+    operations:
+      - name: loadSettings
+        description: 从 storage 加载全量设置，缺失字段用默认值
+        input: {}
+        output: Promise<AppSettings>
+
+      - name: saveSettings
+        description: 保存部分或全部设置（深度合并）
+        input:
+          partial: "Partial<AppSettings> [required]"
+        output: Promise<void>
+
+      - name: getSetting
+        description: 读取单个设置项
+        input:
+          key: "keyof AppSettings [required]"
+        output: Promise<unknown>
+
+      - name: setSetting
+        description: 写入单个设置项
+        input:
+          key: "keyof AppSettings [required]"
+          value: "unknown [required]"
+        output: Promise<void>
+
+      - name: onSettingsChanged
+        description: 监听 storage 变更（跨上下文同步）
+        input:
+          callback: "(changes: Partial<AppSettings>) => void"
+        output: "() => void"  # 返回取消监听函数
+        implementation: "chrome.storage.onChanged.addListener"
+
+# --- UI 契约 ---
+ui:
+  layout: inline-panel
+  entry_point: "Popup Footer 设置齿轮图标 或 App Header 区域"
+
+  settings_panel:
+    sections:
+      - id: appearance
+        title: 外观
+        fields:
+          - key: theme
+            type: radio-group
+            label: 主题模式
+            options:
+              - { value: system, label: "跟随系统", icon: "🖥️" }
+              - { value: light,  label: "亮色",     icon: "☀️" }
+              - { value: dark,   label: "暗色",     icon: "🌙" }
+
+      - id: behavior
+        title: 行为
+        fields:
+          - key: contextMenuEnabled
+            type: toggle
+            label: 启用右键菜单
+            description: 选中文本后可快速执行编解码/格式化操作
+
+          - key: autoCopy
+            type: toggle
+            label: 自动复制结果
+            description: 操作完成后自动将结果复制到剪贴板
+
+    footer:
+      - type: link
+        label: "关于 SecTools"
+        action: open_about  # 打开版本信息面板
+
+  # 设置面板状态
+  component_interface:
+    props:
+      settings: AppSettings
+      onThemeChange: (mode: ThemeMode) => void
+      onSettingChange: (key: keyof AppSettings, value: unknown) => void
+    state:
+      isOpen: boolean  # 面板展开/收起
+
+# --- 默认设置 ---
+defaults:
+  theme: system
+  contextMenuEnabled: true
+  autoCopy: true

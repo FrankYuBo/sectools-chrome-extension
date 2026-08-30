@@ -1,0 +1,221 @@
+# ============================================================
+# 模块 12：AI 研判
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: ai-analysis
+  name: AI 研判
+  description: >
+    通过大模型对选中文本（如工单内容）进行安全研判。
+    用户配置 LLM 服务信息、Prompt 模板和可选的 DOM 父选择器，
+    选中页面文本后一键发送研判，结果在页面右侧浮窗展示。
+
+# --- 功能契约 ---
+features:
+
+  aiConfig:
+    description: LLM 服务配置，存储在 AppSettings.aiConfig 中
+    fields:
+      - key: baseUrl
+        type: string
+        label: API Base URL
+        description: "兼容 OpenAI/Anthropic(国内代理)/DeepSeek/Qwen/Moonshot 等，填写到 /v1 即可"
+        placeholder: "https://api.openai.com/v1"
+        required: true
+      - key: apiKey
+        type: password
+        label: API Key
+        description: "密钥存储在 chrome.storage.local，不外传"
+        required: true
+      - key: model
+        type: select-from-api
+        label: 模型
+        description: >
+          先填 baseUrl + apiKey，点击「获取模型列表」按钮从 API 拉取可选模型。
+          也可手动输入模型名称。
+          兼容 OpenAI / Anthropic（国内代理）/ DeepSeek / Qwen / Moonshot 等标准格式。
+        placeholder: "手动输入或从列表选择"
+        required: true
+        fetch_models_endpoint: "GET {baseUrl}/models"
+        fetch_models_auth: "Authorization: Bearer {apiKey}"
+        fetch_models_response_path: "data[].id"
+        fetch_models_button_label: "获取模型列表"
+      - key: promptTemplate
+        type: textarea
+        label: Prompt 模板
+        description: >
+          使用 {{content}} 作为选中文本的占位符。模板会被填充后作为 system message 发送。
+          默认值为 SOC 分析专家模板（Role/Task/ATT&CK 映射/IOC 提取/处置建议四段式输出，
+          全文见 src/types/index.ts DEFAULT_AI_CONFIG.promptTemplate）。
+          设置页提供「恢复默认」按钮；检测到旧版默认模板时提示升级。
+        default: SOC 分析专家模板（见 DEFAULT_AI_CONFIG.promptTemplate）
+      - key: domParentSelector
+        type: string
+        label: DOM 父选择器
+        description: >
+          可选。填入 CSS 选择器后，选中页面文本时自动向上查找
+          匹配该选择器的祖先元素，提取其完整文本（如 tr.ticket-row）。
+          不填则直接使用选中的文本。
+        placeholder: "tr.ticket-row / .ticket-item / div.alert-card"
+        required: false
+
+    storage:
+      key: aiConfig
+      type: AiConfig object
+      persist: chrome.storage.local
+
+  selectionToolbarButton:
+    description: 选中文本浮动工具栏新增「AI 研判」按钮
+    behavior: >
+      1. 在现有「解码」「情报查询」「URL 分析」之后新增「AI 研判」按钮
+      2. 仅当 aiConfig.baseUrl + apiKey + model 均已配置时显示
+      3. 点击后：
+         a. 提取文本（优先 DOM 父选择器扩展，否则用选中文本）
+         b. 填充 prompt 模板中的 {{content}} 占位符
+         c. 发送到 content script → background → LLM API
+         d. 在页面右侧打开/更新 AI 研判浮窗显示结果
+      4. 未配置时按钮不显示（或显示但点击提示去配置）
+
+    message_flow:
+      - content → background: { type: 'sec:ai-analyze', content: string, promptTemplate: string }
+      - background 调用 LLM API（fetch 到 baseUrl + '/chat/completions'）
+      - background → content: { type: 'sec:ai-result', result: string, error?: string }
+
+  # 注：早期设计的 aiSidebar（右侧 380px 全高浮窗）已被 chatWidget 取代，
+  # 实现为聊天对话框；相关 AC 已同步重写，不再保留旧侧边栏验收项。
+
+  textExtraction:
+    description: 从页面提取文本的逻辑（v0.4.x 修复：锚点元素同步快照）
+    behavior: >
+      1. 用户选中一段文本时，captureSelectionNow() 同步捕获文本/rect/锚点元素
+         （锚点 = range.commonAncestorContainer 向上最近的 Element；
+          input/textarea/contenteditable 场景锚点为元素自身；Shadow DOM 内选区同样返回）
+      2. 点击「AI 研判」按钮时在 await 之前快照 anchorEl + 选中文本
+         （点击可能清除/改变选区），随消息传给提取函数
+      3. 如果配置了 domParentSelector：anchorEl.closest(selector) 提取完整行文本；
+         未匹配/文本为空回退纯选中文本，并记 ai-extract 日志（含失败原因与锚点信息）
+      4. 工具栏 mousedown 调用 preventDefault()，从根上防止点击清除文本选区
+
+  settingsIntegration:
+    description: AI 配置在「更多配置」页面中的展示
+    location: "更多配置」页面的「AI 研判」section
+    fields:
+      - baseUrl (text input)
+      - apiKey (password input, 带 show/hide toggle)
+      - model (可从 API 拉取列表选择，也可手动输入；需先填 baseUrl + apiKey)
+      - promptTemplate (textarea, 带「恢复默认」按钮；旧默认模板显示升级提示)
+      - domParentSelector (text input, 可选)
+    actions:
+      - 测试连接按钮：发送一条简单请求验证 baseUrl + apiKey + model 可用
+      - 恢复默认模板按钮：确认后覆盖为 SOC 分析专家模板
+
+  chatWidget:
+    description: AI 聊天对话框（替代早期 aiSidebar 设计）
+    behavior: >
+      右下角常驻机器人 FAB（站点白名单 chatWidgetSites 控制，空=全站），
+      点击或「AI 研判」按钮触发展开对话框。支持多轮对话（chatHistory 保留上下文）、
+      模型显示与切换（datalist 模型列表）、发送前可编辑文本、脱敏开关即时生效
+      （Chrome 风格拨动开关，圆点右=开）。
+
+  markdownRendering:
+    description: assistant 回复轻量 Markdown 渲染（无第三方依赖）
+    supports:
+      - "#~######" 标题（.md-h1~h4 分级字号）
+      - "**bold**" / "*italic*"
+      - "`code`" 行内代码（占位符机制避免二次处理）
+      - "```" 代码块（pre-wrap + 横向滚动）
+      - "-/*/+" 无序列表、`1. / 1、 / 1)` 有序列表（连续行合并）
+      - "| a | b |" 表格（表头底色 + 边框）
+      - "> " 引用、"---" 分隔线
+      - "[x](url)" 链接（仅放行 http/https，防 javascript: 注入）
+    security: 全部文本先 esc()（& < > "）再套标签；assistant 气泡 white-space: normal
+
+  promptTemplateUpgrade:
+    description: 设置 Schema v5 → v6 默认模板升级迁移
+    rule: >
+      存储的 promptTemplate 为旧版默认值（从未自定义）→ 自动替换为 SOC 模板；
+      用户自定义模板 → 保持不变。isLegacyDefaultPromptTemplate() 判定。
+
+  mcpIntegration:
+    description: 研判前 MCP 自动富化（详见 .spec/mcp-client.spec.yaml）
+    summary: 发送 sec:ai-analyze 后，background 先 mcpAutoEnrich 注入资产上下文，再调 AI；响应携带 mcpResults 供 UI 展示摘要。
+
+  errorClassification:
+    description: AI API 调用失败分类提示
+    timeout: "120s 超时 → 提示检查 Base URL 可达性/代理放行/服务负载（附实际 URL）"
+    network: "Failed to fetch → 提示检查 URL 与网络"
+    logging: "ai tag 记录 URL/模型/状态码/错误详情"
+
+# --- 新增类型 ---
+types:
+  AiConfig:
+    baseUrl: string
+    apiKey: string
+    model: string
+    modelList: string[]
+    promptTemplate: string
+    domParentSelector: string
+    chatWidgetSites: string[]
+    desensitizeEnabled: boolean
+    builtInDesensitizeRules: Record<string, boolean>
+    customDesensitizeRules: CustomDesensitizeRule[]
+    mcpServers: McpServerConfig[]   # 见 mcp-client.spec.yaml
+
+  AiMessage:
+    role: 'system' | 'user' | 'assistant'
+    content: string
+
+# --- AppSettings 新增字段 ---
+settings_additions:
+  aiConfig:
+    type: AiConfig
+    default:
+      baseUrl: ''
+      apiKey: ''
+      model: ''
+      promptTemplate: SOC 分析专家模板（见 src/types/index.ts DEFAULT_AI_CONFIG）
+      domParentSelector: ''
+    schema_history:
+      - "v3: 初建（baseUrl/apiKey/model/promptTemplate/domParentSelector）"
+      - "v4: + chatWidgetSites / desensitizeEnabled / 脱敏规则"
+      - "v5: + mcpServers"
+      - "v6: 旧默认 promptTemplate 自动升级为 SOC 模板（自定义保留）"
+
+# --- 验收标准 ---
+acceptance_criteria:
+  - AC1: 「更多配置」页面包含 AI 研判配置区域，可填写 baseUrl/apiKey/model/prompt 模板/DOM 选择器
+  - AC2: API Key 使用 password 输入框，带 show/hide toggle
+  - AC3: 配置页提供「测试连接」按钮，验证 LLM 服务可用性
+  - AC4: 选中文本浮动工具栏在 AI 配置完整时显示「AI 研判」按钮
+  - AC5: 配置了 DOM 父选择器时，选中工单列表中的文本，自动提取所在行的完整内容
+  - AC6: 未配置 DOM 选择器时，直接使用选中文本
+  - AC7: 点击「AI 研判」后展开右下角聊天对话框，展示 loading → 研判结果（多轮对话保留上下文）
+  - AC8: 聊天对话框使用 Shadow DOM 隔离，不污染宿主页面样式
+  - AC9: 聊天支持复制 AI 回复、追加提问（多轮）、关闭对话框；FAB 与对话框复用
+  - AC10: 对话框跟随扩展主题（亮/暗），实时响应主题设置变更
+  - AC11: LLM 调用失败时浮窗展示错误信息
+  - AC12: 老用户升级后 aiConfig 自动补默认值，无破坏性变更
+  - AC13: 点击工具栏按钮（含 AI 研判）不清除文本选区，父选择器提取依赖选区存活时快照的锚点元素
+  - AC14: assistant 回复完整渲染 Markdown（标题/加粗/行内代码/代码块/列表/表格/链接），无原始符号泄漏且防 XSS
+  - AC15: 旧默认模板用户升级后自动获得 SOC 模板；自定义模板用户不受影响；可手动「恢复默认」
+  - AC16: AI 超时/网络错误显示可操作排查建议（附实际请求 URL）
+  - AC17: 聊天脱敏开关为 Chrome 风格拨动开关（圆点右=开），切换即时生效
+
+# --- 技术备注 ---
+technical_notes: |
+  1. LLM API 调用在 background service worker 中执行（避免 CORS）
+  2. 请求格式遵循 OpenAI Chat Completions API（兼容国内主流代理）：
+     获取模型：GET {baseUrl}/models，Header: Authorization: Bearer {apiKey}
+     对话请求：POST {baseUrl}/chat/completions
+     Body: { model, messages: [{role:'system', content: prompt}, {role:'user', content: text}], stream: false }
+     兼容：OpenAI / Anthropic(国内代理转发为 OpenAI 格式) / DeepSeek / Qwen / Moonshot / GLM / Ollama 等
+  3. Base URL 智能拼接：自动补 /v1 与 /chat/completions，已含则不重复追加
+  4. 流式输出（stream: true）可作为后续优化，v1 使用非流式
+  5. Prompt 模板中的 {{content}} 占位符使用简单字符串替换；
+     MCP 富化上下文追加在 {{content}} 内容之后
+  6. Markdown 渲染为自研轻量实现（chat-widget.ts mdToHtml/mdInline），见 features.markdownRendering
+  7. aiConfig 的 apiKey 虽然存在 chrome.storage.local，
+     但 AGENTS.md 规定未来敏感配置应走 chrome.storage.session 或加密
+  8. DOM 父选择器查找使用 Element.closest(selector)，锚点获取见 features.textExtraction
+  9. 全链路日志见 .spec/logging.spec.yaml（ai-trigger/ai-extract/ai-send/ai）

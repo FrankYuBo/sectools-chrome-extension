@@ -1,0 +1,216 @@
+# ============================================================
+# 模块 10：选中文本浮动工具栏页面过滤（白名单 + 黑名单）
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: selection-toolbar-filter
+  name: 选中文本浮动工具栏页面过滤
+  description: >
+    为「鼠标选中后弹出浮动工具栏」增加总开关与页面名单控制（默认开 + 双空 = 全弹）：
+    白名单非空时仅命中页面弹框（黑名单忽略）；白名单空且黑名单非空时
+    默认全弹、命中黑名单的页面不弹；两名单皆空时保持默认：全部页面弹框。
+    右键菜单（context-menu）不受此设置影响，保持现状。
+
+# --- 用户故事 ---
+user_story:
+  - 作为一名安全运营工程师，我希望选中文本弹框功能只在我指定的站点
+    （如内部 SOC 平台、分析工作台）出现，避免在日常浏览的任意页面上
+    被浮动工具栏打扰，其余页面保持干净。
+  - 作为一名安全运营工程师，我希望也能反向配置：默认所有页面都启用，
+    仅排除少数站点（如网页编辑器、内部邮箱），避免在这些页面被误触。
+
+# --- 需求决策（已与用户对齐 2026-08-20）---
+decisions:
+  - id: mode
+    value: whitelist-first
+    note: >
+      白名单优先——白名单非空时完全按白名单判定（黑名单不参与）；
+      白名单为空且黑名单非空时进入黑名单模式（默认全弹、命中不弹）；
+      两者皆空时保持默认：全部页面弹框。不引入 mode 字段，由两名单是否为空自动推导。
+  - id: rule-format
+    value: smart
+    note: 智能格式，一行一条，自动识别四类规则（纯域名/通配符/CIDR/正则），白黑名单共用同一套格式。
+  - id: scope
+    value: toolbar-only
+    note: 全局开关仅控制浮动工具栏；右键菜单、popup 等其他功能不受影响。
+
+# --- 设置字段 ---
+settings:
+  - key: selectionToolbarEnabled
+    type: boolean
+    default: true
+    description: 选中文本浮动工具栏总开关。false 时任何页面（含名单内）都不弹框。
+  - key: selectionToolbarRules
+    type: string[]        # 逐行存储；UI 层 textarea 整体编辑，保存时 split('\n') 去空行去首尾空格
+    default: []           # 默认空 = 不收窄，看黑名单；双空 = 全部页面弹框（默认全开）
+    description: 白名单规则，一行一条，智能格式。非空时黑名单不生效（白名单优先）。
+  - key: selectionToolbarBlockRules
+    type: string[]        # 存储方式同白名单
+    default: []
+    description: >
+      黑名单规则，一行一条，智能格式。仅在白名单为空时生效：
+      默认所有页面弹框，命中黑名单的页面不弹。
+
+# --- 规则格式（智能识别，优先级从上到下，白/黑名单共用）---
+rule_formats:
+  - kind: cidr
+    syntax: "192.168.0.0/16 | 10.1.2.3"
+    match: hostname 为合法 IPv4 且落在网段内；单个 IP 视为 /32 精确匹配。复用 utils/cidr.ts。
+    examples:
+      - "10.0.0.0/8        → 命中 10.x.x.x 所有页面"
+      - "172.16.5.4        → 仅命中该 IP 页面"
+  - kind: wildcard
+    syntax: "*.example.com"
+    match: hostname 以 `.example.com` 结尾（任意层级子域），不含裸域 example.com（如需含裸域请另写一行纯域名）。
+    examples:
+      - "*.gitcorp.internal → 命中 a.gitcorp.internal、x.y.gitcorp.internal"
+  - kind: domain
+    syntax: "example.com"
+    match: hostname === 'example.com' 或以 '.example.com' 结尾（含全部子域）。
+    special: "单独一行 `*` 表示匹配任意 hostname（等价全页面命中）。"
+  - kind: regex
+    syntax: "/^10\\./  |  /^app\\./i"
+    match: 以 / 开头 / 结尾，可带 i 标志；new RegExp(body, flags) 对 hostname 执行 test。
+    constraints: 仅允许标志 i（其余标志解析失败按非法行处理）。
+
+# --- 匹配语义 ---
+match_semantics:
+  - 匹配目标为 location.hostname（小写、不含协议/端口）；IPv6 页面可用正则规则匹配。
+  - 规则顺序无关，任一命中即视为该名单命中。
+  - 非法行（无法解析）保存时自动忽略，并在设置面板标出行号与原因。
+  - 限制：单行 ≤ 500 字符，单名单 ≤ 100 行；超限部分视为非法并在 UI 提示。
+
+# --- 名单优先级（核心判定，唯一入口 shouldShowSelectionToolbar）---
+judgment_order:
+  decision_table:
+    - { whitelist: 空,     blacklist: 空,     result: 弹（默认全部页面） }
+    - { whitelist: 非空,   blacklist: 任意,   result: "命中白名单 → 弹；未命中 → 不弹（黑名单被忽略）" }
+    - { whitelist: 空,     blacklist: 非空,   result: "默认全弹；命中黑名单 → 不弹" }
+  pseudo_code: |
+    shouldShowSelectionToolbar(settings, hostname):
+      if (!settings.selectionToolbarEnabled) return false
+      const wl = parseRules(settings.selectionToolbarRules)
+      if (wl.length > 0) return matchHost(hostname, wl)   // 白名单优先，黑名单不参与
+      const bl = parseRules(settings.selectionToolbarBlockRules)
+      if (bl.length > 0) return !matchHost(hostname, bl)  // 黑名单模式：默认全弹减排除
+      return true                                          // 双空 → 默认全弹
+  notes:
+    - "「白名单优先」的准确含义：白名单非空时黑名单完全不参与判定（包括白名单 * 的情况）。"
+    - "想实现「全启用但排除部分页面」：白名单留空，只填黑名单；不要白名单 * + 黑名单（黑名单会失效）。"
+
+# --- UI（SettingsPanel 新增区块）---
+ui:
+  section_title: 选中文本浮动工具栏
+  components:
+    - type: toggle
+      binds: selectionToolbarEnabled
+      label: 启用选中文本浮动工具栏
+    - type: textarea
+      binds: selectionToolbarRules
+      label: 白名单（命中才弹）
+      placeholder: |
+        *.corp.internal
+        10.0.0.0/8
+        172.16.5.4
+        /^dev-/i
+      hint: 一行一条；支持 纯域名 / 通配符 / CIDR / 正则 四种格式；* 单独一行表示全部页面
+    - type: textarea
+      binds: selectionToolbarBlockRules
+      label: 黑名单（命中不弹，仅白名单为空时生效）
+      placeholder: |
+        mail.corp.internal
+        *.google.com
+      hint: 仅在白名单为空时生效：默认全部页面弹框，命中黑名单的页面不弹
+    - type: inline-conflict-hint
+      detail: 白名单与黑名单同时非空时，显示提示「当前白名单非空，黑名单不生效」
+    - type: inline-validation
+      detail: 保存前对两个 textarea 分别实时校验，非法行显示「第 N 行：原因」；合法/非法行数统计
+    - type: help-text
+      detail: 总开关默认开；两名单皆空时所有页面都弹框；此设置不影响右键菜单
+
+# --- 生效链路 ---
+pipeline:
+  - content/index.ts 启动时 loadSettings()
+  - "!selectionToolbarEnabled → 不注册任何 selection 监听，直接结束"
+  - "enabled → shouldShowSelectionToolbar(settings, location.hostname)（判定顺序见 judgment_order）"
+  - true → 挂载现有浮动工具栏逻辑；false → 不挂载
+  - 动态生效：监听 settings onSettingsChanged，名单/开关变更后当前页面即时挂载/卸载监听，无需刷新页面
+
+# --- Schema 迁移 ---
+migration:
+  from: 1
+  to: 2
+  steps:
+    - SETTINGS_SCHEMA_VERSION 升到 2
+    - MIGRATIONS 补默认值 selectionToolbarEnabled=true、selectionToolbarRules=[]、selectionToolbarBlockRules=[]
+    - loadSettings 的 DEFAULTS merge 兜底老数据
+
+# --- 验收标准 ---
+acceptance_criteria:
+  - id: ac-1
+    given: enabled=true 且白名单=['*.corp.internal']，黑名单=[]
+    when: 在 a.corp.internal 页面选中文本
+    then: 弹出浮动工具栏
+  - id: ac-2
+    given: 同 ac-1
+    when: 在 example.com 页面选中文本
+    then: 不弹框，页面无任何注入痕迹（无 Shadow DOM、无监听）
+  - id: ac-3
+    given: enabled=false 且白名单=['*.corp.internal']
+    when: 在 a.corp.internal 页面选中文本
+    then: 不弹框
+  - id: ac-4
+    given: 白名单=['10.0.0.0/8', '172.16.5.4']
+    when: 访问 10.20.30.40 与 172.16.5.4 页面并选中文本
+    then: 两页面均弹框
+  - id: ac-5
+    given: 白名单=['*']
+    when: 任意页面选中文本
+    then: 弹框（等价全页面启用）
+  - id: ac-6
+    given: 任一名单含非法行（如 'not a rule!!'）
+    when: 打开设置面板并保存
+    then: 非法行被忽略且 UI 标注行号与原因，合法行正常生效
+  - id: ac-7
+    given: 页面已按当前名单处于未挂载状态
+    when: 修改设置使当前页面命中（或取消命中）
+    then: 不刷新页面，浮动工具栏监听即时挂载（或卸载）
+  - id: ac-8
+    given: 任意名单配置
+    when: 在任意页面右键选中内容
+    then: 右键菜单行为与现状完全一致（不受本设置影响）
+  - id: ac-9
+    given: 白名单=[]，黑名单=['*.google.com']
+    when: 在 mail.google.com 与 example.org 页面选中文本
+    then: example.org 弹框；mail.google.com 不弹框
+  - id: ac-10
+    given: 白名单=['*.corp.internal']，黑名单=['*.corp.internal']
+    when: 在 a.corp.internal 页面选中文本
+    then: 弹框（白名单优先：同时命中时按白名单处理）
+  - id: ac-11
+    given: 白名单=['*']，黑名单=['mail.google.com']
+    when: 在 mail.google.com 页面选中文本
+    then: 弹框（白名单非空时黑名单完全不参与，含 * 场景）；设置面板显示「黑名单不生效」提示
+  - id: ac-12
+    given: 白名单=[]，黑名单=[]
+    when: 任意页面选中文本
+    then: 弹框（默认全开，与 v0.2.x 行为一致）
+  - id: ac-13
+    given: 白名单=[]，黑名单=['192.168.0.0/16']
+    when: 在 192.168.1.1 与 10.0.0.1 页面选中文本
+    then: 10.0.0.1 弹框；192.168.1.1 不弹框
+
+# --- 技术说明 ---
+technical_notes:
+  - 新增纯函数模块 src/utils/selection-filter.ts：parseRule / matchHost / validateRules / shouldShowSelectionToolbar，返回 ToolResult 风格，零 DOM 依赖。
+  - 配套 src/__tests__/selection-filter.test.ts：覆盖四类规则 × 白/黑名单 + 判定表全分支 + 边界（大写 hostname、带端口输入、IPv6 正则、超长行、非法正则、双空名单、enabled=false）。
+  - content/index.ts 重构为「守卫式初始化」：先 shouldShowSelectionToolbar 判定再挂监听，未命中页面零开销。
+  - utils/cidr.ts 的 ipToInt / 网段判断直接复用，不重复实现。
+  - CHANGELOG 记录为 0.3.0（默认行为不变：开关开 + 双空名单 = 全部页面弹框；名单仅用于收窄/排除）。
+
+# --- 非目标 ---
+non_goals:
+  - 不做黑白名单显式模式切换开关（由两名单是否为空自动推导，白名单优先）。
+  - 不控制右键菜单的页面范围。
+  - 不做规则导入导出。

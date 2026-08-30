@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   SecTools Popup — 基础样式
+   ============================================================ */
+
+/* --- 全局 reset --- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+/* --- 主题变量 --- */
+:root {
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+/* --- Scrollbar --- */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 4px;
+}
+
+[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background-color: #475569;
+}
+
+/* --- Focus ring --- */
+*:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+/* --- Selection --- */
+::selection {
+  background-color: #3b82f680;
+  color: #fff;
+}
+
+/* --- Textarea / Input base --- */
+textarea,
+input[type='text'],
+input[type='number'] {
+  transition: border-color 0.15s ease;
+}
+
+textarea:focus,
+input[type='text']:focus,
+input[type='number']:focus {
+  border-color: #3b82f6;
+}

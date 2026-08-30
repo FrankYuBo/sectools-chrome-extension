@@ -1,0 +1,134 @@
+# ============================================================
+# 模块 5：进制转换
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: number-base
+  name: 进制转换
+  description: >
+    二进制(2)/八进制(8)/十进制(10)/十六进制(16)/三十二进制(32)/六十四进制(64)
+    之间任意转换。支持大整数。
+
+# --- 功能契约 ---
+features:
+
+  baseConvert:
+    description: 任意进制互转（2-64 进制范围）
+    operations:
+      - name: convertBase
+        description: 将数字字符串从一种进制转换为另一种进制
+        input:
+          value: "string [required]"
+          from_base: "number [min:2, max:64, required]"
+          to_base: "number [min:2, max:64, required]"
+        output:
+          success:
+            result: string
+            from_base: number
+            to_base: number
+          errors:
+            - EMPTY_INPUT
+            - INVALID_BASE_RANGE  # from_base 或 to_base 不在 2-64 内
+            - INVALID_DIGIT  # value 包含不在 from_base 范围内的字符
+        character_set: "0-9, a-z, A-Z, +, / (标准 Base64 字符集)"
+
+  quickConvert:
+    description: 快速进制转换（2/8/10/16，内部使用 BigInt）
+    operations:
+      - name: quickConvert
+        input:
+          value: "string [required]"
+          from_base: "2 | 8 | 10 | 16" [required]
+        output:
+          success:
+            binary: string
+            octal: string
+            decimal: string
+            hexadecimal: string
+          errors:
+            - EMPTY_INPUT
+            - INVALID_INPUT
+
+  binaryViewer:
+    description: 将任意文本转为二进制/十六进制视图
+    operations:
+      - name: textToBinaryView
+        input:
+          text: "string [required]"
+          view_mode: "'binary' | 'hex' | 'both'" [default: hex]
+          group_size: "number [default: 1]"  # 每多少字节一组
+        output:
+          success:
+            result: string  # 格式化的十六进制/二进制视图
+            byte_count: number
+          errors: [EMPTY_INPUT]
+
+  bitwiseOperations:
+    description: 位运算（AND/OR/XOR/NOT/左移/右移）
+    operations:
+      - name: bitwiseOp
+        input:
+          a: "string [required]"  # hex 或 decimal
+          b: "string [required]"
+          operator: "'AND' | 'OR' | 'XOR' | 'NOT' | 'SHL' | 'SHR'" [required]
+          operand_base: "'hex' | 'dec'" [default: hex]
+        output:
+          success:
+            result_hex: string
+            result_dec: string
+            result_bin: string
+          errors:
+            - EMPTY_INPUT
+            - INVALID_OPERATOR
+
+# --- UI 契约 ---
+ui:
+  layout: tab
+  tab_config:
+    id: number-base
+    label: 进制转换
+    icon: "🔢"
+    description: "进制/位运算/Binary View"
+
+  sub_tabs:
+    - id: quick
+      label: "二/八/十/十六"
+      description: "快速四进制互转"
+    - id: arbitrary
+      label: "任意进制"
+      description: "2-64 进制互转"
+    - id: binary-view
+      label: "Binary View"
+      description: "文本 → 十六进制/二进制视图"
+    - id: bitwise
+      label: "位运算"
+      description: "AND/OR/XOR/NOT/SHL/SHR"
+
+  component_interface:
+    props:
+      inputValue: string
+      result: string
+      selectedSubTab: string
+    events:
+      onConvert: () => void
+      onCopy: () => void
+
+# --- 测试契约 ---
+tests:
+  - case: "decimal to hex"
+    given: value = "255", from_base = 10, to_base = 16
+    when: convertBase
+    then: result === "ff"
+  - case: "hex to binary"
+    given: value = "ff", from_base = 16, to_base = 2
+    when: convertBase
+    then: result === "11111111"
+  - case: "quick convert decimal"
+    given: value = "42", from_base = 10
+    when: quickConvert
+    then: { binary: "101010", octal: "52", decimal: "42", hex: "2a" }
+  - case: "bitwise XOR"
+    given: a = "0xff", b = "0x0f", operator = "XOR"
+    when: bitwiseOp
+    then: result_hex === "0xf0"

@@ -1,0 +1,152 @@
+# ============================================================
+# 模块 8：版本更新
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: version-update
+  name: 版本更新
+  description: >
+    自动检测插件新版本并提示用户更新。
+    通过 GitHub Releases API（方案 C）拉取最新 tag_name 做 semver 对比，
+    不依赖 Chrome Web Store，适用于自托管 / 开发模式 / Web Store 上架
+    所有安装方式。支持更新通知 Badge、更新横幅、下载跳转、
+    用户可忽略单次 / 永久忽略特定版本。
+
+# --- 功能契约 ---
+features:
+
+  versionCheck:
+    description: 检查 GitHub Releases 是否有新版本（方案 C）
+    operations:
+      - name: checkForUpdate
+        description: >
+          调用 GitHub REST API `/repos/{owner}/{repo}/releases/latest`
+          获取最新 Release 的 tag_name，与本地 manifest.version 做 semver 比较。
+          离线 / 403 限流时静默降级，不抛错不打扰用户。
+        input:
+          force: "boolean [default: false]"  # 是否强制检查（忽略冷却时间）
+        output: Promise<UpdateCheckResult>
+        behavior: >
+          1. 读取 chrome.runtime.getManifest().version 作为当前版本
+          2. 若未过冷却（距上次 < 1h 且非 force），返回 THROTTLED
+          3. Service Worker 内 fetch GitHub API（https://api.github.com/repos/FrankYuBo/sectools-chrome-extension/releases/latest）
+          4. 解析 tag_name：去除 v 前缀（v0.2.1 → 0.2.1），按 semver 三元组比较
+          5. 返回 hasUpdate / currentVersion / latestVersion / releaseUrl
+          6. 写 storage：lastCheckTime / lastKnownUpdate
+        throttling:
+          min_interval: 3600000  # 至少间隔 1 小时（毫秒）
+        errors:
+          - THROTTLED        # 冷却期内
+          - FETCH_FAILED     # 离线 / 网络错误
+          - RATE_LIMITED     # GitHub API 403 限流（次小时后恢复）
+
+      - name: getCurrentVersion
+        description: 获取当前扩展版本号
+        input: {}
+        output: string  # 从 chrome.runtime.getManifest().version 读取
+
+  updateNotification:
+    description: 新版本发现后的 UI 提示策略
+    components:
+      - type: badge
+        description: 扩展图标右上角显示绿色 NEW Badge
+        trigger: hasUpdate === true
+        dismiss: 用户点击扩展图标查看后自动清除
+        implementation:
+          set: "chrome.action.setBadgeText({ text: 'NEW' }) + chrome.action.setBadgeBackgroundColor({ color: '#22c55e' })"
+          clear: "chrome.action.setBadgeText({ text: '' })"
+
+      - type: banner
+        description: Popup 打开时顶部显示可关闭的更新提示条
+        trigger: hasUpdate === true && updateDismissedVersion !== latestVersion
+        content: "新版本 v{latestVersion} 可用（当前 v{currentVersion}）"
+        actions:
+          - label: "下载更新"
+            action: open_github_release  # 新标签打开 release.html_url
+            implementation: "chrome.runtime.sendMessage({ type: 'sec:open-tab', url: releaseUrl })"
+          - label: "忽略"
+            action: dismiss_once  # 本次关闭，下次打开 Popup 再次提醒
+          - label: "不再提示"
+            action: dismiss_forever  # 保存 dismissedVersion，不再提醒此版本
+
+  aboutPanel:
+    description: "关于 SecTools" 信息面板
+    content:
+      - extension_name: "从 manifest.name 读取"
+      - version: "从 manifest.version 读取"
+      - description: "从 manifest.description 读取"
+      - tech_stack: "TypeScript + React + Vite + TailwindCSS"
+      - data_policy: "纯本地运算，不上传任何数据"
+      - permissions_used: "从 manifest.permissions 读取"
+      - github_repo_url: "可点击的 GitHub 源码仓库链接"
+      - github_releases_url: "可点击的 GitHub Releases 下载链接"
+      - bilibili_url: "可点击的 B 站主页链接"
+    actions:
+      - label: "检查更新"
+        action: checkForUpdate { force: true }
+      - label: "GitHub Releases"
+        action: open_github_releases  # 新标签打开 /releases/latest
+
+# --- UI 契约 ---
+ui:
+  layout: panel
+  entry_point: "设置面板底部「关于 SecTools」链接"
+
+  version_banner:
+    component_interface:
+      props:
+        update: UpdateCheckResult
+        onDismiss: () => void
+      location: "Popup 顶部，Tab 栏上方"
+      button_order: "[下载更新]  [忽略]  [不再提示]"
+
+  about_panel:
+    component_interface:
+      props:
+        currentVersion: string
+        onClose: () => void
+        onCheckUpdate: () => void
+      location: "Popup 内覆盖层 / 设置面板内嵌"
+
+# --- 与 Settings 的交互 ---
+cross_module:
+  - settings:
+      keys_used:
+        - lastUpdateCheck        # 上次检查时间戳
+        - updateDismissedVersion # 已忽略的版本号
+        - lastKnownUpdate        # 缓存的 UpdateCheckResult
+
+# --- 存储 ---
+storage_keys:
+  - key: sectools_update_info
+    schema:
+      lastCheckTime: number
+      dismissedVersion: string | null
+      lastKnownUpdate: UpdateCheckResult | null
+
+# --- 测试契约 ---
+tests:
+  - case: "get current version from manifest"
+    when: getCurrentVersion()
+    then: "返回 package.json / manifest.json 中的版本号"
+
+  - case: "throttle check within 1 hour"
+    given: lastUpdateCheck 距离现在 < 3600000 ms
+    when: checkForUpdate(force=false)
+    then: "返回 THROTTLED，不实际发起网络请求"
+
+  - case: "force check ignores throttle"
+    given: lastUpdateCheck 距离现在 < 3600000 ms
+    when: checkForUpdate(force=true)
+    then: "实际 fetch GitHub Releases API"
+
+  - case: "semver compare 正确识别新版本"
+    given: 当前 0.2.0，tag_name = v0.2.1
+    when: isNewer('0.2.1', '0.2.0')
+    then: 返回 true；checkForUpdate 返回 hasUpdate: true
+
+  - case: "离线/限流 静默降级"
+    given: GitHub API 返回 403 或 网络不可达
+    when: checkForUpdate()
+    then: "返回 hasUpdate: false，不抛错，不展示 Banner"
