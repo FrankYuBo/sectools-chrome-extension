@@ -6,8 +6,8 @@
 
 | 模块 | 功能 |
 |------|------|
-| 🛡️ **威胁情报** | 12 大情报源并行查询（默认勾选 VirusTotal + 微步 ThreatBook）；支持 IP/Domain/URL/MD5/SHA1/SHA256/SHA512/Email/CVE/ASN 自动类型识别；可自定义默认勾选 |
-| 🔗 **URL 分析** | URL 结构拆解 + 同形异义字检测 + 短链还原（最多 20 hop，HEAD→GET 降级）+ CSP favicon hash 比对 |
+| 🛡️ **威胁情报** | 10 大情报源并行查询（默认勾选 VirusTotal + 微步 ThreatBook）；支持 IP/Domain/URL/MD5/SHA1/SHA256/SHA512/Email/CVE/ASN 自动类型识别；IDN 同形异义域名完整识别；可自定义默认勾选 |
+| 🔗 **URL 分析** | URL 结构拆解 + 同形异义字检测 + 短链还原（最多 20 hop，HEAD→GET→HTTP 明文逐级降级 + JS/Meta Refresh 解析 + 跳转环检测，完整跳转链路逐跳展示）+ CSP favicon hash 比对 |
 | 📦 **编解码** | Base64、Base32、Hex、URL、Unicode、HTML 实体编解码；JWT 解析；**多层自动解码引擎**（最大 10 层） |
 | 🔐 **加密哈希** | MD5、SHA1、SHA256、SHA512 哈希；HMAC；AES 加解密（CBC/ECB/GCM/CTR）（Web Crypto 安全源） |
 | 🔍 **正则** | 匹配高亮 + 替换预览 + **Sigma 规则 Lint + Yara 规则 Lint**；内置常用正则库 |
@@ -16,6 +16,19 @@
 | 🕒 **时间转换** | Unix 时间戳（秒/毫秒/微秒/纳秒） ↔ 可读时间；FILETIME ↔ 可读时间；当前时间实时显示 |
 | 🔢 **进制转换** | 二进制/八进制/十进制/十六进制互转；Hex Viewer 字节视图 |
 | 🎲 **生成器** | UUID（批量+大小写）；强随机密码（排除易混淆字符可选）；随机串（字母/数字/十六进制/全字符）；随机整数（无偏采样）；随机字节（Web Crypto 安全源） |
+
+> 🧠 **面板记忆**：Popup 关闭再打开，自动恢复上次所在面板，各面板的输入、选项与输出结果（生成器产物、解码结果、查询结果等）原样保留，未复制的输出不再丢失。
+
+## AI 研判（选中文本 → 一键研判）
+
+配置 OpenAI 兼容 LLM（GLM/DeepSeek/Qwen/Moonshot/Ollama 等）后，选中工单/告警文本即可研判：
+
+- **聊天对话框**：右下角常驻机器人图标（站点白名单可控），支持多轮追问、模型切换、发送前编辑、内置脱敏开关（Chrome 风格）、Markdown 完整渲染
+- **SOC 分析专家提示词模板**：ATT&CK 映射 / IOC 提取 / 处置建议四段式结构化输出，可自定义，支持一键恢复默认
+- **DOM 父选择器**：配置如 `tr.ticket-row`，选中单元格自动提取整行工单内容送研研判
+- **MCP Server 集成**：连接外部 MCP Server（Streamable HTTP），研判前自动调用工具查询资产/情报注入上下文（stdio 型可经 supergateway 桥接）
+- **情报富化**：研判前自动查询免费公开情报源——URLhaus / ThreatFox / MalwareBazaar（abuse.ch）、CISA KEV、NVD、Cloudflare DoH 域名解析交叉验证、本地 ip2region IP 归属；VirusTotal / AbuseIPDB / urlscan.io 配置 Key 后启用（未配 Key 自动跳过）
+- **配置迁移**：设置页一键导出/导入全部配置 JSON（可选脱敏），换电脑即插即用
 
 ## 选中文本浮动工具栏（Content Script）
 
@@ -42,8 +55,8 @@ sectools-chrome-extension/
 │   └── data/ip2region.db        # IP 归属离线库（8.3MB，不打包进 JS，独立文件分发）
 ├── scripts/gen_icons.py         # 一键生成多尺寸 PNG 图标
 ├── src/
-│   ├── background/index.ts      # Service Worker：content↔background 消息协议（短链还原/RDAP/新标签/通知+Badge）
-│   ├── content/index.ts         # 选中文本浮动工具栏 + Shadow DOM 3 按钮 + 面板
+│   ├── background/              # Service Worker：sw.ts（消息协议/AI调用/短链/RDAP）+ mcp-client.ts + enrichment.ts
+│   ├── content/                 # index.ts 选中文本浮动工具栏 + chat-widget.ts AI 聊天对话框
 │   ├── popup/                   # React UI（10 Tab 面板 + App.tsx Tab 路由）
 │   │   └── components/          # IntelPanel / UrlPanel / RegexPanel / NetworkPanel 等 14 个组件
 │   ├── types/                   # 全局类型（AppSettings、ToolResult<T>、IocType、IntelSourceType...）
@@ -80,8 +93,8 @@ npm run typecheck
 npm run test           # 单次
 npm run test:watch     # 监听模式
 
-# 🟢 健康检查三合一（pre-push 钩子自动跑，失败拒绝 push）
-npm run doctor         # = typecheck + test + build
+# 🟢 健康检查四合一（pre-push 钩子自动跑，失败拒绝 push）
+npm run doctor         # = lint + typecheck + test + build
 
 # 打包可发布 zip（产物在项目根目录 sectools-v{version}.zip）
 npm run zip
@@ -101,7 +114,7 @@ npm run release
    → 6. 过 npm run doctor
    → 7. push
 ```
-本项目已有 9 份存量 Spec 可参考（`ls .spec/`）。
+本项目已有 18 份 Spec 可参考（`ls .spec/`）。
 
 ## 加载到 Chrome
 

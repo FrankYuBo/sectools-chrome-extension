@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { usePersistentState } from '../../utils/persistent-state';
 import { computeHash, computeHMAC, aesEncrypt, aesDecrypt } from '../../utils';
 import type { ToolResult, HashAlgorithm, AesMode } from '../../types';
 
@@ -18,13 +19,13 @@ const HASH_LIST: HashAlgorithm[] = ['MD5', 'SHA-1', 'SHA-256', 'SHA-512'];
 const AES_MODES: AesMode[] = ['GCM', 'CBC'];
 
 const CryptoHashPanel: React.FC<Props> = ({ onAutoCopy }) => {
-  const [subTab, setSubTab] = useState<SubTab>('hash');
-  const [input, setInput] = useState('');
-  const [key, setKey] = useState('');
-  const [algorithm, setAlgorithm] = useState<HashAlgorithm>('SHA-256');
-  const [aesMode, setAesMode] = useState<AesMode>('CBC');
-  const [aesDirection, setAesDirection] = useState<'encrypt' | 'decrypt'>('encrypt');
-  const [output, setOutput] = useState('');
+  const [subTab, setSubTab] = usePersistentState<SubTab>('crypto.subTab', 'hash');
+  const [input, setInput] = usePersistentState<string>('crypto.input', '');
+  const [key, setKey] = usePersistentState<string>('crypto.key', '');
+  const [algorithm, setAlgorithm] = usePersistentState<HashAlgorithm>('crypto.algorithm', 'SHA-256');
+  const [aesMode, setAesMode] = usePersistentState<AesMode>('crypto.aesMode', 'CBC');
+  const [aesDirection, setAesDirection] = usePersistentState<'encrypt' | 'decrypt'>('crypto.aesDirection', 'encrypt');
+  const [output, setOutput] = usePersistentState<string>('crypto.output', '');
   const [error, setError] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 

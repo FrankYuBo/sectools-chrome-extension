@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { usePersistentState } from '../../utils/persistent-state';
 import {
   base64Encode, base64Decode,
   base32Encode, base32Decode,
@@ -31,13 +32,13 @@ const SUB_TABS: { id: SubTab; label: string; hasEncode?: boolean }[] = [
 ];
 
 const EncodeDecodePanel: React.FC<Props> = ({ onAutoCopy }) => {
-  const [subTab, setSubTab] = useState<SubTab>('base64');
-  const [direction, setDirection] = useState<Direction>('decode');
-  const [input, setInput] = useState('');
-  const [output, setOutput] = useState('');
-  const [lastLayerResult, setLastLayerResult] = useState('');
+  const [subTab, setSubTab] = usePersistentState<SubTab>('encode.subTab', 'base64');
+  const [direction, setDirection] = usePersistentState<Direction>('encode.direction', 'decode');
+  const [input, setInput] = usePersistentState<string>('encode.input', '');
+  const [output, setOutput] = usePersistentState<string>('encode.output', '');
+  const [lastLayerResult, setLastLayerResult] = usePersistentState<string>('encode.lastLayerResult', '');
   const [error, setError] = useState('');
-  const [jwtResult, setJwtResult] = useState<Record<string, unknown> | null>(null);
+  const [jwtResult, setJwtResult] = usePersistentState<Record<string, unknown> | null>('encode.jwtResult', null);
 
   const currentTab = SUB_TABS.find((t) => t.id === subTab)!;
   const isDecodeOnly = !currentTab.hasEncode;

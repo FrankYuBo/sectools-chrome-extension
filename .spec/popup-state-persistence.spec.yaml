@@ -1,0 +1,63 @@
+# ============================================================
+# 模块：Popup 状态持久化（面板记忆 + 输入/输出保留）
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: popup-state-persistence
+  name: Popup 面板记忆与输入输出持久化
+  description: >
+    Popup 关闭再打开后：恢复上次所在面板；各面板的输入、选项与
+    输出结果原样保留（生成器产物、解码结果、查询结果等），
+    避免用户未复制的输出丢失。
+
+# --- 功能契约 ---
+features:
+
+  usePersistentStateHook:
+    description: 通用持久化 hook（src/utils/persistent-state.ts），用法与 useState 一致
+    api: "usePersistentState<T>(key, initial): [T, setter]"
+    setter: 同时接受新值与函数式更新
+    storage: >
+      chrome.storage.local 单 key popupPanelState（对象合并存储，
+      避免逐字段 key 膨胀）；与 appSettings（配置导出/导入）完全独立
+    memory_cache: 模块级缓存——popup 生命周期内组件二次挂载（切 Tab 返回）同步命中零 IO
+    write_strategy: debounce 400ms 合并写；storage 异常降级为纯内存（本会话仍有效）
+    restore_strategy: 挂载 effect 异步恢复（毫秒级闪变）
+
+  lastPanelMemory:
+    description: 记忆上次激活面板
+    key: app.activeTab
+    fallback: 恢复值若已被隐藏/移除，由既有 validity effect 回退到第一个可见 Tab
+
+  panelStateCoverage:
+    description: 各面板接入清单
+    inputs_and_options:
+      - "编解码：子Tab/方向/输入/输出/多层结果/JWT结构"
+      - "加密哈希：子Tab/输入/密钥/算法/AES模式与方向/输出"
+      - "URL分析：子Tab/输入/结构拆解/短链链路/同形字结果"
+      - "格式化：子Tab/JSON动作/左右输入/JSONPath/输出/解析树"
+      - "时间转换：子Tab/方向/输入/单位/日期信息/转换结果"
+      - "进制转换：子Tab/输入/源进制/输出"
+      - "正则：子Tab/pattern/flags/测试文本/库分类（匹配结果由输入自动重算）"
+      - "威胁情报：输入文本"
+      - "网络：子Tab/CIDR模式与输入/四类CIDR结果/Cron结果/ip2region单批量结果/Whois目标与结果"
+      - "生成器：子Tab/UUID与密码全部选项/生成结果（防未复制丢失）/随机串与随机数参数"
+    intentionally_excluded:
+      - "error / loading / progress 等瞬时状态"
+      - "ip2region searcher（类实例不可序列化，重开后自动重载 db）"
+
+# --- 验收标准 ---
+acceptance_criteria:
+  - AC1: 切换到任一 Tab 后关闭 Popup，重新打开停在该 Tab
+  - AC2: 恢复的 Tab 被隐藏/移除时回退第一个可见 Tab
+  - AC3: 各面板输入与选项（算法/方向/子Tab等）关闭重开后原样恢复
+  - AC4: 生成器结果、解码输出、URL 分析/短链链路、查询结果等输出重开仍在
+  - AC5: 输入持续打字不逐键写 storage（debounce 合并）
+  - AC6: 配置导出/导入不受影响（独立 storage key）
+
+# --- 技术备注 ---
+technical_notes: |
+  1. hook 位于 src/utils/persistent-state.ts；面板接入为逐 state 单行替换
+  2. key 命名 <panel>.<field>（如 gen.output / net.cidr.mode）
+  3. clearPersistentPanelState() 提供给未来"重置面板数据"入口

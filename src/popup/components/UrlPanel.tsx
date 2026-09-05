@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { usePersistentState } from '../../utils/persistent-state';
 import {
   analyzeUrl,
   analyzeHomoglyph,
@@ -37,14 +38,14 @@ interface UnshortenResult {
 }
 
 const UrlPanel: React.FC<Props> = ({ onAutoCopy }) => {
-  const [subTab, setSubTab] = useState<SubTab>('analyze');
-  const [input, setInput] = useState('');
+  const [subTab, setSubTab] = usePersistentState<SubTab>('url.subTab', 'analyze');
+  const [input, setInput] = usePersistentState<string>('url.input', '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const [urlResult, setUrlResult] = useState<UrlAnalysisResult | null>(null);
-  const [unshortenResult, setUnshortenResult] = useState<UnshortenResult | null>(null);
-  const [homoglyphResult, setHomoglyphResult] = useState<HomoglyphAnalysisResult | null>(null);
+  const [urlResult, setUrlResult] = usePersistentState<UrlAnalysisResult | null>('url.result', null);
+  const [unshortenResult, setUnshortenResult] = usePersistentState<UnshortenResult | null>('url.unshorten', null);
+  const [homoglyphResult, setHomoglyphResult] = usePersistentState<HomoglyphAnalysisResult | null>('url.homoglyph', null);
 
   const runAnalyze = useCallback(() => {
     if (!input.trim()) {

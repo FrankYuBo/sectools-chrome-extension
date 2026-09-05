@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { usePersistentState } from '../../utils/persistent-state';
 import { quickConvert, textToBinaryView } from '../../utils';
 import type { ToolResult, QuickConversion } from '../../types';
 
@@ -22,10 +23,10 @@ const BASE_OPTIONS: { value: NumberBase; label: string }[] = [
 ];
 
 const NumberBasePanel: React.FC<Props> = ({ onAutoCopy }) => {
-  const [subTab, setSubTab] = useState<SubTab>('convert');
-  const [input, setInput] = useState('');
-  const [sourceBase, setSourceBase] = useState<NumberBase>('hex');
-  const [output, setOutput] = useState('');
+  const [subTab, setSubTab] = usePersistentState<SubTab>('num.subTab', 'convert');
+  const [input, setInput] = usePersistentState<string>('num.input', '');
+  const [sourceBase, setSourceBase] = usePersistentState<NumberBase>('num.sourceBase', 'hex');
+  const [output, setOutput] = usePersistentState<string>('num.output', '');
   const [error, setError] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 

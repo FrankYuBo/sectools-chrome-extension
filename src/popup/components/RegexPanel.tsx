@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { usePersistentState } from '../../utils/persistent-state';
 import type {
   RegexLibraryCategory,
   RegexLibraryGroup,
@@ -443,11 +444,11 @@ function buildHighlightedHtml(text: string, matches: RegexMatchResult[]): string
 }
 
 const RegexPanel: React.FC<Props> = ({ onAutoCopy }) => {
-  const [subTab, setSubTab] = useState<RegexPanelSubTab>('custom');
-  const [pattern, setPattern] = useState('');
-  const [flags, setFlags] = useState<string>('g');
-  const [testText, setTestText] = useState('');
-  const [libraryCategory, setLibraryCategory] = useState<RegexLibraryCategory>('network');
+  const [subTab, setSubTab] = usePersistentState<RegexPanelSubTab>('regex.subTab', 'custom');
+  const [pattern, setPattern] = usePersistentState<string>('regex.pattern', '');
+  const [flags, setFlags] = usePersistentState<string>('regex.flags', 'g');
+  const [testText, setTestText] = usePersistentState<string>('regex.testText', '');
+  const [libraryCategory, setLibraryCategory] = usePersistentState<RegexLibraryCategory>('regex.libraryCategory', 'network');
   const [selectedPreset, setSelectedPreset] = useState<RegexPresetItem | null>(null);
   const [debounced, setDebounced] = useState<{ p: string; f: string; t: string }>({ p: '', f: 'g', t: '' });
   const [activeMatchIdx, setActiveMatchIdx] = useState<number | null>(null);

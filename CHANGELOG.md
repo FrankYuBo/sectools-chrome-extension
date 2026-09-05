@@ -1,12 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 (2026-09-05)
 
 ### Added
+- **Popup 面板记忆与输入输出持久化**：关闭再打开后恢复上次所在面板；各面板输入、选项与输出结果（生成器产物/解码结果/URL 分析与短链链路/查询结果等）原样保留，避免未复制的输出丢失——通用 hook `usePersistentState`（debounce 合并写 + 内存缓存，storage key `popupPanelState` 与配置导出导入独立）（spec: `.spec/popup-state-persistence.spec.yaml`）
 - **配置导出/导入（迁移电脑）**：设置页顶部「配置迁移」区块——导出全部配置为 JSON（可选包含 API Key/MCP Token 等敏感信息，默认勾选并二次确认，脱敏导出清空所有密钥但保留结构）；导入经结构校验（app 标识/aiConfig 检查）+ 覆盖确认，低版本文件自动走 schema 迁移链升级（spec: `.spec/settings.spec.yaml` features.migration）
 - **情报富化（免费 API + 本地实现）**：AI 研判前自动查询公开情报源并注入上下文——免 Key：URLhaus/ThreatFox/MalwareBazaar（abuse.ch）、CISA KEV 已知被利用漏洞比对、NVD CVE 详情、Cloudflare DoH 域名解析（与工单 IP 交叉验证）、本地 ip2region IP 归属（断网可用）；Key 型源（VirusTotal/AbuseIPDB/urlscan.io）未配置 Key 时自动跳过不影响其他功能；逐源串行 + 结果缓存（IOC 24h/DNS 1h/CVE 7d）+ 每类限量 3 条；内网地址不出网（spec: `.spec/enrichment.spec.yaml`，schema v6→v7）
-- **MCP Server 集成（客户端）**：插件作为 MCP 客户端经 Streamable HTTP 连接外部 MCP Server，设置页管理服务器（URL/Token/启用/自动调用工具勾选，支持测试连接）；AI 研判前自动提取 IOC 匹配工具参数并调用（如查资产），结果注入研判上下文，聊天界面显示查询摘要；stdio 型 Server 可经 supergateway/mcp-proxy 桥接（spec: `.spec/mcp-client.spec.yaml`，schema v4→v5）
-- **运行日志系统**：环形缓冲 500 条（时间戳/级别/模块标签），覆盖 ai-trigger/ai-extract/ai-send/ai/mcp/unshorten 全链路；聊天错误消息旁「复制日志」一键导出；控制台 `__sectools_logs()` 系列 API（spec: `.spec/logging.spec.yaml`）
+- **MCP Server 集成（客户端）**：插件作为 MCP 客户端经 Streamable HTTP 连接外部 MCP Server，设置页管理服务器（URL/Token 密码框/启用/自动调用工具勾选，支持测试连接）；AI 研判前自动提取 IOC 匹配工具参数并调用（如查资产），结果注入研判上下文，聊天界面显示查询摘要；`Mcp-Session-Id` 自动缓存回传、会话过期(404)自动重建；连接 403 Invalid Origin 时错误信息附可复制的扩展 Origin 与服务端放行指引；stdio 型 Server 可经 supergateway/mcp-proxy 桥接（spec: `.spec/mcp-client.spec.yaml`，schema v4→v5）
+- **运行日志系统**：环形缓冲 500 条（时间戳/级别/模块标签），覆盖 ai-trigger/ai-extract/ai-send/ai/mcp/enrich/unshorten 全链路；SW 侧日志持久化聚合，「复制日志」导出跨上下文（SW+content）合并全量；控制台 `__sectools_logs()` 系列 API（扩展上下文）（spec: `.spec/logging.spec.yaml`）
 - **SOC 分析专家默认提示词模板**：Role/Task/ATT&CK 映射/IOC 提取/处置建议四段式结构化输出；旧默认模板用户升级自动替换（自定义模板保留），设置页新增「恢复默认」按钮（schema v5→v6）
 - **短链还原增强**：证书过期降级链（HEAD→GET→HTTP 明文）、HEAD 非 3xx 自动 GET 复核、JS/Meta Refresh 跳转解析、跳转环检测、HTTP→HTTPS 弹回死局识别；UI 新增「⟾ 跳转链路」逐跳展示（URL/状态码/方法/Location/降级标注）与「跟踪受阻」状态（spec: `.spec/url-unshorten.spec.yaml`）
 - **IDN 同形异义域名识别**：域名正则与校验器支持拉丁扩展/希腊/西里尔字符（排除 CJK 防误吞），负向后行断言兼容非 ASCII 开头域名；`gοogle.com`/`аpple-id.com` 完整提取，不再截断为 `ogle.com`/`pple-id.com`（spec: `.spec/ioc-idn-detection.spec.yaml`）
@@ -16,11 +17,14 @@
 - **DOM 父选择器失效**：点击工具栏按钮时浏览器默认清除文本选区导致 `closest()` 落空；现选区存活时同步捕获锚点元素 + 点击时快照传递 + 工具栏 `mousedown` `preventDefault()`
 - **AI API 报错不友好**：`signal timed out` 等裸错误改为分类可操作提示（超时/网络错误分别附排查建议与实际请求 URL）
 - **短链完整链路**：MV3 opaque redirect 降级 follow 时通过 `webRequest.onBeforeRedirect` 捕获真实中间跳转并重建完整链路；跳转环安全终止；HEAD 200 页面经 GET 复核后继续解析 JS/Meta Refresh
+- **脱敏开关关闭不恢复原文**：关闭时恢复脱敏前原始文本
+- **lint 回归与 doctor 盲区**：修复 5 处 lint 错误（constant condition/自赋值/多余转义/控制字符正则等），`doctor` 质量门禁加入 `npm run lint`
 
 ### Changed
-- **开关统一为 Chrome 扩管风格**：设置页 Toggle 与聊天脱敏开关统一为拨动开关（圆点右=开、左=关，突出轨道），替换脱敏原 checkbox
+- **开关统一为 Chrome 扩管风格**：设置页、Popup 设置、聊天脱敏开关统一为拨动开关（圆点右=开、左=关，突出轨道），新增 Popup 共享 Toggle 组件（sm 紧凑档）
 - **威胁情报源精简为 10 家**：移除 Intezer Analyze、VirusShare（spec 与测试同步）
 - **DOM 父选择器提示对齐示例**：placeholder `tr.issue-row` → `tr.ticket-row`
+- **spec 清理**：移除已被聊天组件取代的旧 aiSidebar 验收项，AC 同步重写消除内部矛盾
 - **mock-tickets.html 演示工单扩充至 12 条**：新增 0896 木马失陷（含 SHA256/进程链/C2）、0895 短链钓鱼（bit.ly + rn 伪装）、0894 Webshell Base64 流量（真实可解码）、0893 同形异义域名（希腊/西里尔字符）、0892 API 撞库 JSON 日志
 
 ## 0.4.0 (2026-08-24)

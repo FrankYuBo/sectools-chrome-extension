@@ -10,6 +10,7 @@ import {
   getEffectiveTheme,
 } from '../utils';
 import type { AppSettings, UpdateCheckResult, TabId } from '../types';
+import { usePersistentState } from '../utils/persistent-state';
 
 import EncodeDecodePanel from './components/EncodeDecodePanel';
 import CryptoHashPanel from './components/CryptoHashPanel';
@@ -135,7 +136,8 @@ const ALL_TABS: Record<TabId, TabMeta> = {
 };
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabId>('encode');
+  // 记忆上次关闭时所在面板（恢复值若已被隐藏/移除，由下方 validity effect 兜底回第一个可见 Tab）
+  const [activeTab, setActiveTab] = usePersistentState<TabId>('app.activeTab', 'encode');
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [settings, setSettings] = useState<AppSettings | null>(null);

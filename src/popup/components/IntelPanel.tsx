@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { usePersistentState } from '../../utils/persistent-state';
 import type { AppSettings, IocMatch, IntelSourceType } from '../../types';
 import { INTEL_SOURCES, buildIntelLink } from '../../utils/intel-sources';
 import { detectIocs } from '../../utils/ioc-detector';
@@ -45,7 +46,7 @@ const IOC_TYPE_COLORS: Record<string, string> = {
 };
 
 const IntelPanel: React.FC<Props> = ({ settings, onAutoCopy }) => {
-  const [inputText, setInputText] = useState('');
+  const [inputText, setInputText] = usePersistentState<string>('intel.inputText', '');
   const [selectedSources, setSelectedSources] = useState<Set<IntelSourceType>>(
     new Set(settings.defaultIntelSources.filter((s) =>
       DISPLAYED_SOURCES.some((ds) => ds.id === s),

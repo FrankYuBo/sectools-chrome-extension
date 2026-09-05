@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { usePersistentState } from '../../utils/persistent-state';
 import type { AppSettings } from '../../types';
 import {
   cidrInfo,
@@ -39,7 +40,7 @@ const SUB_TABS: { id: SubTab; label: string }[] = [
 const DEFAULT_XDB_URL = 'https://cdn.jsdelivr.net/npm/ip2region@2.3.0/data/ip2region.db';
 
 const NetworkPanel: React.FC<Props> = ({ settings: _settings, onAutoCopy }) => {
-  const [subTab, setSubTab] = useState<SubTab>('cidr');
+  const [subTab, setSubTab] = usePersistentState<SubTab>('net.subTab', 'cidr');
   const [error, setError] = useState('');
 
   return (
@@ -349,14 +350,14 @@ const NetworkPanel: React.FC<Props> = ({ settings: _settings, onAutoCopy }) => {
 type CidrMode = 'info' | 'aggregate' | 'check' | 'expand';
 
 const CidrTab: React.FC<{ onAutoCopy: (t: string) => void; onError: (e: string) => void }> = ({ onAutoCopy, onError }) => {
-  const [mode, setMode] = useState<CidrMode>('info');
-  const [input, setInput] = useState('192.168.1.0/24');
-  const [cidrInput, setCidrInput] = useState('192.168.1.0/24');
-  const [ipInput, setIpInput] = useState('192.168.1.100');
-  const [infoResult, setInfoResult] = useState<CidrInfo | null>(null);
-  const [aggResult, setAggResult] = useState<AggregateResult | null>(null);
-  const [checkResult, setCheckResult] = useState<{ inRange: boolean; cidr: string; ip: string } | null>(null);
-  const [expandResult, setExpandResult] = useState<{ ips: string[]; total: number; truncated: boolean } | null>(null);
+  const [mode, setMode] = usePersistentState<CidrMode>('net.cidr.mode', 'info');
+  const [input, setInput] = usePersistentState<string>('net.cidr.input', '192.168.1.0/24');
+  const [cidrInput, setCidrInput] = usePersistentState<string>('net.cidr.cidrInput', '192.168.1.0/24');
+  const [ipInput, setIpInput] = usePersistentState<string>('net.cidr.ipInput', '192.168.1.100');
+  const [infoResult, setInfoResult] = usePersistentState<CidrInfo | null>('net.cidr.infoResult', null);
+  const [aggResult, setAggResult] = usePersistentState<AggregateResult | null>('net.cidr.aggResult', null);
+  const [checkResult, setCheckResult] = usePersistentState<{ inRange: boolean; cidr: string; ip: string } | null>('net.cidr.checkResult', null);
+  const [expandResult, setExpandResult] = usePersistentState<{ ips: string[]; total: number; truncated: boolean } | null>('net.cidr.expandResult', null);
   const execRef = useRef<number>();
 
   const exec = useCallback(() => {
@@ -739,8 +740,8 @@ const CronTab: React.FC<{ onAutoCopy: (t: string) => void; onError: (e: string) 
   const [mode, setMode] = useState<CronMode>('describe');
   const [cronInput, setCronInput] = useState('0 0 2 * * ?');
   const [naturalInput, setNaturalInput] = useState('每天早上8点');
-  const [describeResult, setDescribeResult] = useState<CronDescribeResult | null>(null);
-  const [naturalResult, setNaturalResult] = useState<{ cron: string; matched: string; description: string }[] | null>(null);
+  const [describeResult, setDescribeResult] = usePersistentState<CronDescribeResult | null>('net.cron.describeResult', null);
+  const [naturalResult, setNaturalResult] = usePersistentState<{ cron: string; matched: string; description: string }[] | null>('net.cron.naturalResult', null);
   const execRef = useRef<number>();
 
   const exec = useCallback(() => {
@@ -900,11 +901,11 @@ const IpRegionTab: React.FC<{ onAutoCopy: (t: string) => void; onError: (e: stri
   const [progress, setProgress] = useState<{ loaded: number; total: number } | null>(null);
   const [singleIp, setSingleIp] = useState('8.8.8.8');
   const [batchInput, setBatchInput] = useState('8.8.8.8\n1.1.1.1\n114.114.114.114');
-  const [singleResult, setSingleResult] = useState<Ip2RegionResult | null>(null);
+  const [singleResult, setSingleResult] = usePersistentState<Ip2RegionResult | null>('net.ip2r.singleResult', null);
   // UI 展示用的批量结果视图（兼容 ip2RegionBatchSearch）
   interface BatchItem { ip: string; region: string; city: string; isp: string; error?: string }
   interface BatchResultView { success: number; failed: number; total: number; results: BatchItem[] }
-  const [batchResult, setBatchResult] = useState<BatchResultView | null>(null);
+  const [batchResult, setBatchResult] = usePersistentState<BatchResultView | null>('net.ip2r.batchResult', null);
   const execRef = useRef<number>();
 
   // 挂载时自动加载扩展内置的 ip2region.db，失败再 fallback
@@ -1152,14 +1153,14 @@ const IpRegionTab: React.FC<{ onAutoCopy: (t: string) => void; onError: (e: stri
 type WhoisResultType = 'ip' | 'domain' | 'asn' | 'unknown';
 
 const WhoisTab: React.FC<{ onAutoCopy: (t: string) => void; onError: (e: string) => void }> = ({ onAutoCopy, onError }) => {
-  const [target, setTarget] = useState('8.8.8.8');
+  const [target, setTarget] = usePersistentState<string>('net.whois.target', '8.8.8.8');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{
+  const [result, setResult] = usePersistentState<{
     type: WhoisResultType;
     target: string;
     data: unknown;
     source: string;
-  } | null>(null);
+  } | null>('net.whois.result', null);
 
   const doQuery = useCallback(async () => {
     if (!target.trim()) { onError('请输入查询目标'); return; }

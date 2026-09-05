@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { usePersistentState } from '../../utils/persistent-state';
 import {
   generateUuid,
   generatePassword,
@@ -25,30 +26,30 @@ const SUB_TABS: { id: SubTab; label: string }[] = [
 ];
 
 const GeneratorPanel: React.FC<Props> = ({ onAutoCopy }) => {
-  const [subTab, setSubTab] = useState<SubTab>('uuid');
-  const [output, setOutput] = useState('');
+  const [subTab, setSubTab] = usePersistentState<SubTab>('gen.subTab', 'uuid');
+  const [output, setOutput] = usePersistentState<string>('gen.output', '');
   const [error, setError] = useState('');
 
   // UUID
-  const [uuidVersion, setUuidVersion] = useState<UuidVersion>('v4');
-  const [uuidCount, setUuidCount] = useState(1);
-  const [uuidLower, setUuidLower] = useState(true);
+  const [uuidVersion, setUuidVersion] = usePersistentState<UuidVersion>('gen.uuidVersion', 'v4');
+  const [uuidCount, setUuidCount] = usePersistentState<number>('gen.uuidCount', 1);
+  const [uuidLower, setUuidLower] = usePersistentState<boolean>('gen.uuidLower', true);
 
   // Password
-  const [pwLen, setPwLen] = useState(16);
-  const [pwLower, setPwLower] = useState(true);
-  const [pwUpper, setPwUpper] = useState(true);
-  const [pwDigits, setPwDigits] = useState(true);
-  const [pwSym, setPwSym] = useState(true);
-  const [pwNoAmb, setPwNoAmb] = useState(true);
+  const [pwLen, setPwLen] = usePersistentState<number>('gen.pwLen', 16);
+  const [pwLower, setPwLower] = usePersistentState<boolean>('gen.pwLower', true);
+  const [pwUpper, setPwUpper] = usePersistentState<boolean>('gen.pwUpper', true);
+  const [pwDigits, setPwDigits] = usePersistentState<boolean>('gen.pwDigits', true);
+  const [pwSym, setPwSym] = usePersistentState<boolean>('gen.pwSym', true);
+  const [pwNoAmb, setPwNoAmb] = usePersistentState<boolean>('gen.pwNoAmb', true);
 
   // Random string
-  const [strLen, setStrLen] = useState(24);
-  const [strCharset, setStrCharset] = useState<'alphanumeric' | 'alphabetic' | 'numeric' | 'hex' | 'all'>('alphanumeric');
+  const [strLen, setStrLen] = usePersistentState<number>('gen.strLen', 24);
+  const [strCharset, setStrCharset] = usePersistentState<'alphanumeric' | 'alphabetic' | 'numeric' | 'hex' | 'all'>('gen.strCharset', 'alphanumeric');
 
   // Random int
-  const [intMin, setIntMin] = useState(0);
-  const [intMax, setIntMax] = useState(100);
+  const [intMin, setIntMin] = usePersistentState<number>('gen.intMin', 0);
+  const [intMax, setIntMax] = usePersistentState<number>('gen.intMax', 100);
 
   // Random bytes
   const [byteCount, setByteCount] = useState(16);

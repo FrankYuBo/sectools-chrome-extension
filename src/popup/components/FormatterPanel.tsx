@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { usePersistentState } from '../../utils/persistent-state';
 import {
   jsonFormat, jsonMinify, jsonValidate,
   jsonEscape, jsonUnescape, jsonPathQuery, jsonDiff,
@@ -33,13 +34,13 @@ const JSON_ACTIONS: { id: JsonAction; label: string }[] = [
 ];
 
 const FormatterPanel: React.FC<Props> = ({ settings, onAutoCopy }) => {
-  const [subTab, setSubTab] = useState<SubTab>('json');
-  const [jsonAction, setJsonAction] = useState<JsonAction>('format');
-  const [input, setInput] = useState('');
-  const [inputRight, setInputRight] = useState('');
-  const [jsonPath, setJsonPath] = useState('');
-  const [output, setOutput] = useState('');
-  const [parsedJson, setParsedJson] = useState<unknown>(null);
+  const [subTab, setSubTab] = usePersistentState<SubTab>('format.subTab', 'json');
+  const [jsonAction, setJsonAction] = usePersistentState<JsonAction>('format.jsonAction', 'format');
+  const [input, setInput] = usePersistentState<string>('format.input', '');
+  const [inputRight, setInputRight] = usePersistentState<string>('format.inputRight', '');
+  const [jsonPath, setJsonPath] = usePersistentState<string>('format.jsonPath', '');
+  const [output, setOutput] = usePersistentState<string>('format.output', '');
+  const [parsedJson, setParsedJson] = usePersistentState<unknown>('format.parsedJson', null);
   const [error, setError] = useState('');
   const [expandInput, setExpandInput] = useState(true);
   const [expandOutput, setExpandOutput] = useState(true);

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { usePersistentState } from '../../utils/persistent-state';
 import {
   timestampToHuman, humanToTimestamp,
   getCurrentTimestamp, filetimeToHuman, humanToFiletime,
@@ -27,14 +28,14 @@ const TS_UNITS: { value: TimestampUnit; label: string }[] = [
 ];
 
 const TimestampPanel: React.FC<Props> = ({ settings, onAutoCopy }) => {
-  const [subTab, setSubTab] = useState<SubTab>('unix');
-  const [direction, setDirection] = useState<'ts2human' | 'human2ts'>('ts2human');
-  const [tsInput, setTsInput] = useState('');
-  const [humanInput, setHumanInput] = useState('');
-  const [unit, setUnit] = useState<TimestampUnit>(settings.timestampDefaultUnit);
-  const [targetUnit, setTargetUnit] = useState<TimestampUnit>('s');
-  const [dateInfo, setDateInfo] = useState<DateTimeInfo | null>(null);
-  const [resultTs, setResultTs] = useState<number | bigint | null>(null);
+  const [subTab, setSubTab] = usePersistentState<SubTab>('ts.subTab', 'unix');
+  const [direction, setDirection] = usePersistentState<'ts2human' | 'human2ts'>('ts.direction', 'ts2human');
+  const [tsInput, setTsInput] = usePersistentState<string>('ts.input', '');
+  const [humanInput, setHumanInput] = usePersistentState<string>('ts.humanInput', '');
+  const [unit, setUnit] = usePersistentState<TimestampUnit>('ts.unit', settings.timestampDefaultUnit);
+  const [targetUnit, setTargetUnit] = usePersistentState<TimestampUnit>('ts.targetUnit', 's');
+  const [dateInfo, setDateInfo] = usePersistentState<DateTimeInfo | null>('ts.dateInfo', null);
+  const [resultTs, setResultTs] = usePersistentState<number | bigint | null>('ts.resultTs', null);
   const [currentTimeInfo, setCurrentTimeInfo] = useState<ReturnType<typeof getCurrentTimestamp>['data'] | null>(null);
   const [error, setError] = useState('');
 
