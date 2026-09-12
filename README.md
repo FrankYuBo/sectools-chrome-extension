@@ -2,13 +2,15 @@
 
 安全运营 / 反入侵工程师日常瑞士军刀 Chrome 扩展。选中文本即弹窗、Popup 10 大常用工具面板，一站式搞定 IOC 查询、URL 分析、编解码、哈希、正则、CIDR、时间戳、格式化。
 
+📺 **使用说明视频**：[B 站观看](https://www.bilibili.com/video/BV13ft264EM7/)
+
 ## 功能（10 Tab 按使用频率左→右）
 
 | 模块 | 功能 |
 |------|------|
 | 🛡️ **威胁情报** | 10 大情报源并行查询（默认勾选 VirusTotal + 微步 ThreatBook）；支持 IP/Domain/URL/MD5/SHA1/SHA256/SHA512/Email/CVE/ASN 自动类型识别；IDN 同形异义域名完整识别；可自定义默认勾选 |
 | 🔗 **URL 分析** | URL 结构拆解 + 同形异义字检测 + 短链还原（最多 20 hop，HEAD→GET→HTTP 明文逐级降级 + JS/Meta Refresh 解析 + 跳转环检测，完整跳转链路逐跳展示）+ CSP favicon hash 比对 |
-| 📦 **编解码** | Base64、Base32、Hex、URL、Unicode、HTML 实体编解码；JWT 解析；**多层自动解码引擎**（最大 10 层） |
+| 📦 **编解码** | Base64、Base32、Hex、URL、Unicode、HTML 实体编解码；JWT 深度解析（三段视图/时间字段可读化/风险检测）+ 签发伪造（HS*/none）；**多层自动解码引擎**（最大 10 层） |
 | 🔐 **加密哈希** | MD5、SHA1、SHA256、SHA512 哈希；HMAC；AES 加解密（CBC/ECB/GCM/CTR）（Web Crypto 安全源） |
 | 🔍 **正则** | 匹配高亮 + 替换预览 + **Sigma 规则 Lint + Yara 规则 Lint**；内置常用正则库 |
 | 🌐 **网络** | CIDR 计算（掩码/网络/广播/主机数/包含判断）；IP 归属离线查询（ip2region xdb 8.3MB，全球 99%+ 覆盖）；RDAP 查询（IP/Domain/ASN） |

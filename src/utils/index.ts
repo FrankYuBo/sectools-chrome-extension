@@ -190,3 +190,21 @@ export type {
   SelectionRuleIssue,
   SelectionRulesValidation,
 } from './selection-filter';
+
+// JWT 工具 — 深度解析 / 安全风险检测 / 签发伪造
+export {
+  analyzeJwtTimeFields,
+  checkJwtSecurity,
+  signJwtHS,
+  forgeJwtNone,
+  verifySelfConsistency,
+  JWT_HEADER_FIELD_DOCS,
+  JWT_PAYLOAD_FIELD_DOCS,
+} from './jwt-tools';
+export type {
+  JwtSecurityFinding,
+  JwtSecurityLevel,
+  JwtTimeFieldView,
+  JwtTimeState,
+  JwtSignAlg,
+} from './jwt-tools';

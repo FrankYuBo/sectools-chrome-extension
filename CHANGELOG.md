@@ -12,6 +12,7 @@
 - **短链还原增强**：证书过期降级链（HEAD→GET→HTTP 明文）、HEAD 非 3xx 自动 GET 复核、JS/Meta Refresh 跳转解析、跳转环检测、HTTP→HTTPS 弹回死局识别；UI 新增「⟾ 跳转链路」逐跳展示（URL/状态码/方法/Location/降级标注）与「跟踪受阻」状态（spec: `.spec/url-unshorten.spec.yaml`）
 - **IDN 同形异义域名识别**：域名正则与校验器支持拉丁扩展/希腊/西里尔字符（排除 CJK 防误吞），负向后行断言兼容非 ASCII 开头域名；`gοogle.com`/`аpple-id.com` 完整提取，不再截断为 `ogle.com`/`pple-id.com`（spec: `.spec/ioc-idn-detection.spec.yaml`）
 - **聊天 Markdown 渲染**：assistant 回复完整渲染标题/加粗/斜体/行内代码/代码块/有序无序列表/表格/引用/链接，全文本转义防 XSS
+- **JWT 深度解析 / 风险检测 / 签发伪造**：编解码面板 JWT 子 Tab 增强（不新增 Tab）——深度解析（三段分栏、标准字段中文注释、exp/nbf/iat 秒毫秒自动识别 + 可读时间/相对时间 + 过期三态标注、signature 标注不可解码）；安全风险检测（alg=none / HS*+kid 算法混淆 / 敏感字段泄露 / 非标准算法 / 缺失 exp 分级高/中/低提示，敏感值不回显）；签发伪造（HS256/384/512 经 Web Crypto HMAC 签名、alg=none 伪造，参数持久化，与解析双向联动）（spec: `.spec/jwt-tools.spec.yaml`，纯函数 `src/utils/jwt-tools.ts` + 单测 `src/__tests__/jwt-tools.test.ts`）
 
 ### Fixed
 - **DOM 父选择器失效**：点击工具栏按钮时浏览器默认清除文本选区导致 `closest()` 落空；现选区存活时同步捕获锚点元素 + 点击时快照传递 + 工具栏 `mousedown` `preventDefault()`

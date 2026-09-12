@@ -1,0 +1,130 @@
+# ============================================================
+# 模块：JWT Token 工具（编解码面板 JWT 子 Tab 增强）
+# ============================================================
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: jwt-tools
+  name: JWT 深度解析 / 风险检测 / 签发伪造
+  description: >
+    在编解码面板现有 JWT 子 Tab 基础上增强（不加新 Tab）：
+    ① 深度解析——三段分栏、标准字段中文解释、时间字段可读化与
+    过期状态标注；② 安全风险检测——alg=none / 算法混淆 /
+    敏感信息泄露 / 非标准算法等风险项分级提示；③ 签发/伪造——
+    HS256/384/512 密钥签发测试 Token、alg=none 伪造（验证服务端
+    是否校验签名）。不含弱密钥爆破（用户明确排除）。
+
+# --- 现状基线 ---
+baseline: >
+  encode-decode.ts jwtDecode 已返回 { header, payload, signatureRaw }，
+  EncodeDecodePanel JWT 子 Tab 以 JSON <pre> 简单展示三段；
+  多层解码引擎已可识别 JWT。本 spec 在此之上增强，不破坏既有行为。
+
+# --- 功能契约 ---
+features:
+
+  deepParse:
+    description: 深度解析（纯函数，utils/jwt-tools.ts）
+    segments_view: >
+      三段分栏高亮：Header（算法徽标）/ Payload（JSON KV 视图，标准字段
+      带中文注释行）/ Signature（base64url 原文展示，标注"签名不可解码，
+      用于完整性校验"）
+    header_fields:
+      - "alg：算法全称与说明（如 HS256 = HMAC-SHA256 对称签名）"
+      - "typ：令牌类型（JWT 默认）"
+      - "kid：密钥 ID（提示存在多密钥/轮换场景）"
+      - 其他未知字段原样展示
+    payload_standard_fields:
+      - "iss 签发者 / sub 主体 / aud 受众 / jti 唯一标识"
+      - "exp 过期时间 / nbf 生效时间 / iat 签发时间"
+    time_fields: >
+      exp/nbf/iat 自动识别秒/毫秒 → 本地可读时间 + 相对时间
+      （"2 小时前签发"/"3 天后过期"）；exp/nbf 与当前时间比较：
+      有效（绿）/ 已过期（红）/ 未生效（琥珀）三态标注
+    non_standard_fields: 非标准字段保留原值展示（不解释）
+
+  securityCheck:
+    description: 安全风险检测（纯函数 checkJwtSecurity(header, payload, now?)）
+    findings_model: >
+      JwtSecurityFinding { level: 'high'|'medium'|'low', code, title,
+      detail, suggestion }[]，按等级排序展示；无风险时显示绿色
+      "未发现常见风险项（不代表安全）"
+    checks:
+      - code: ALG_NONE
+        level: high
+        rule: "header.alg 为 'none'（或缺失）"
+        detail: 服务端若不校验签名，可伪造任意身份
+      - code: ALG_CONFUSION_HINT
+        level: medium
+        rule: "alg 为 HS* 且存在 kid（提示可能存在 RS→HS 算法混淆攻击面）"
+        detail: 若服务端误用公钥做 HMAC 校验，攻击者可用公钥伪造令牌
+      - code: SENSITIVE_PAYLOAD
+        level: medium
+        rule: "payload 键名匹配 password/passwd/pwd/secret/token/apikey/api_key/privatekey/phone/mobile/idcard 等敏感词（不区分大小写）"
+        detail: JWT payload 仅 base64 编码可被任意解码，不应存放敏感明文
+      - code: UNKNOWN_ALG
+        level: low
+        rule: "alg 不在白名单（HS256/384/512、RS256/384/512、ES256/384/512、PS256/384/512、EdDSA）"
+        detail: 非标准算法，需确认实现来源
+      - code: NO_EXPIRY
+        level: low
+        rule: "payload 无 exp 字段"
+        detail: 令牌永不过期，泄露后长期有效
+
+  signForge:
+    description: 签发/伪造（async，Web Crypto HMAC，与 AES 面板同安全源策略）
+    inputs:
+      - "alg 下拉：HS256 / HS384 / HS512 / none（伪造）"
+      - "payload：JSON 编辑器（预填当前解析的 payload 便于改字段重签）"
+      - "secret（HS 系列必填，密码框可切换明文）"
+    outputs: 完整 Token（点击复制 + 自动复制遵循全局设置）
+    behavior:
+      - "HS256/384/512：crypto.subtle HMAC-SHA(256/384/512) 对 base64url(header).base64url(payload) 签名"
+      - "alg=none：输出 header.payload.（尾部空签名），界面显著标注「仅用于测试服务端是否校验签名，禁止用于未授权测试」"
+      - "自校验：签发结果立即回填解析区（三段/风险检测同步生效），闭环验证"
+    persistence: 签发参数（alg/payload/secret/结果）接入面板持久化（popupPanelState）
+
+  uiIntegration:
+    description: JWT 子 Tab 内布局（不新增 Tab）
+    layout: >
+      ① 输入区（现状）→ ② 解析结果区升级为深度解析三段视图 →
+      ③ 风险检测区（有发现才渲染，色标：高=红/中=琥珀/低=灰蓝）→
+      ④ 可折叠「签发/伪造」工具区（默认折叠，展开不影响解析视图）
+    interaction: >
+      「用此 payload 重签」快捷按钮：解析结果 → 一键带入签发区 payload；
+      签发结果 → 「解析此 Token」一键回填输入区
+
+# --- 类型与模块 ---
+types:
+  JwtSecurityFinding:
+    level: "'high' | 'medium' | 'low'"
+    code: string
+    title: string
+    detail: string
+    suggestion: string
+
+new_modules:
+  - "src/utils/jwt-tools.ts：analyzeJwtTimeFields（时间解释/状态）、checkJwtSecurity（风险检测）、signJwtHS（Web Crypto 签名）、forgeJwtNone —— 全部纯函数或注入式（now 参数），可单测"
+
+# --- 验收标准 ---
+acceptance_criteria:
+  - AC1: 输入含 exp/iat 的合法 JWT，展示可读时间与相对时间，过期状态三态正确（含秒/毫秒自动识别）
+  - AC2: header/payload 标准字段附中文解释，signature 段标注不可解码
+  - AC3: alg=none Token → 高危红色提示；HS* + kid → 中危混淆提示
+  - AC4: payload 含 password/phone 等敏感键 → 中危提示（值不回显完整内容）
+  - AC5: 未知算法、缺失 exp 分别触发对应低危提示
+  - AC6: HS256 签发 → 输出 Token 可被自身解析且 signature 一致（自校验单测）
+  - AC7: alg=none 伪造输出 `header.payload.` 空签名并显示用途警示
+  - AC8: 「用此 payload 重签」/「解析此 Token」双向联动
+  - AC9: 关闭重开 popup，JWT 输入/解析结果/签发参数全部保留
+  - AC10: 既有 jwtDecode 行为与多层解码 JWT 识别不受影响（回归）
+
+# --- 技术备注 ---
+technical_notes: |
+  1. 新纯函数模块 src/utils/jwt-tools.ts；UI 改造限于 EncodeDecodePanel JWT 分支
+  2. 签名经 crypto.subtle.importKey + sign（HMAC SHA-256/384/512），
+     base64url 编解码复用 encode-decode.ts 现有工具
+  3. 敏感值展示脱敏：风险项 detail 中 payload 值仅显示键名与长度，不回显明文
+  4. 时间边界单测：已过期/未生效/临界（exp == now）/秒毫秒识别
+  5. 日志 tag=jwt（解析成功/风险数量/签发算法，不含 secret 内容）
+  6. 弱密钥爆破明确不在本 spec 范围
