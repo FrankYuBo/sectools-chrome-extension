@@ -1,0 +1,36 @@
+apiVersion: sdd/v1
+kind: ModuleSpec
+metadata:
+  module_id: ai-reasoning
+  name: AI 研判思考过程展示
+  status: pending-confirmation
+
+id: ai-reasoning-display
+title: 在 AI 回复中展示接口返回的思考过程
+description: >
+  为现有非流式 AI 研判增加独立、可折叠的思考过程区域。
+  仅展示模型服务实际返回的推理文本，不通过提示词要求生成或补造思考过程。
+  本期随完整响应一次展示，实时流式展示留待后续需求。
+user-story: >
+  作为安全运营工程师，我希望在阅读研判结论时按需展开模型服务返回的
+  思考过程，以辅助理解结论，并保持回答正文清晰可读。
+
+acceptance-criteria:
+  - AC1: 从 choices[0].message.reasoning_content 提取非空字符串作为思考过程；缺失时兼容 reasoning 字符串字段。
+  - AC2: 有思考过程时，在 assistant 回答正文上方显示标题为“思考过程”的可折叠区域，默认折叠，支持鼠标和键盘展开。
+  - AC3: 无推理字段、字段为空或类型不支持时，保持现有回答展示，不显示空区域、不报错。
+  - AC4: 思考过程与正文分开保存；多轮请求只发送 role/content，不将思考过程回传给模型。
+  - AC5: 关闭后重新打开对话框以及主题切换导致重绘时，思考过程仍与对应回复关联；清空对话同时移除。
+  - AC6: 思考文本以 textContent 渲染，保留换行、支持长文本换行，不能执行 HTML 或脚本；样式限定在 Shadow DOM。
+  - AC7: 仅有思考过程但没有有效正文时，展示已有思考过程并明确提示“模型未返回回答正文”，不伪造结论。
+  - AC8: 现有 MCP 和情报富化摘要、错误提示、多轮对话保持可用；不额外记录完整推理文本到日志。
+  - AC9: 补充解析单测和聊天展示测试，覆盖双字段优先级、缺失/空/错误类型、仅推理、XSS 文本及历史请求不携带推理。
+  - AC10: 更新 README、CHANGELOG 以及原 AI spec 的相关契约，执行 npm run doctor 和打包验证。
+
+technical-notes:
+  - 在 utils 中新增纯函数解析模块，集中处理未知响应类型并返回 ToolResult，配套单测。
+  - background/sw.ts 保持 stream:false，将正文及可选 reasoning 独立返回给 content；同步更新消息类型。
+  - 聊天本地展示记录可扩展可选 reasoning 字段，请求发送前显式投影为 role/content。
+  - 使用原生 details/summary 和 pre-wrap 文本区域，沿用聊天主题变量。
+  - 不解析正文中的 think 标签；不猜测私有供应商字段；本期不新增供应商推理开关或推理强度配置。
+  - 本期沿用 Chat Completions 接口，不迁移 Responses API，不新增流式端口协议。

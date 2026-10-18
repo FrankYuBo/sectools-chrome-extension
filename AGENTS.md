@@ -12,7 +12,7 @@
 | **项目名称** | SecTools Chrome 扩展 |
 | **定位** | 安全运营 / 反入侵工程师日常瑞士军刀：编解码、哈希、威胁情报、URL 分析、正则、CIDR、时间戳、格式化等一键可用 |
 | **技术栈** | Chrome Manifest V3 · Vite 8 · TypeScript 5.5 (strict) · React 18 · Tailwind CSS 3.4 · Vitest 4 · Shadow DOM (content script 隔离) |
-| **当前版本** | 0.4.0 |
+| **当前版本** | 0.4.2 |
 | **包管理** | npm（node_modules / package-lock.json，不混用 pnpm/yarn） |
 | **代码托管** | GitHub 私有仓库（FrankYuBo/sectools-chrome-extension） |
 
@@ -23,6 +23,7 @@
 ```
 sectools-chrome-extension/
 ├── .spec/                       # 需求驱动的 Spec YAML（新增需求先写 spec 再改代码！）
+│   ├── ai-reasoning.spec.yaml      # AI 流式思考过程
 │   ├── project.spec.yaml
 │   ├── settings.spec.yaml
 │   ├── encode-decode.spec.yaml
@@ -67,6 +68,7 @@ sectools-chrome-extension/
 │   │   ├── index.ts             # 全局类型：AppSettings、IocType、IntelSourceType、ToolResult<T>、PageTab、UpdateCheckResult
 │   │   └── regex-yara-sigma.ts  # 正则 / Sigma / Yara Lint 专属类型
 │   ├── utils/                   # 🟢 纯函数模块（零 DOM / 零 UI 依赖，全部可独立 Vitest 单测）
+│   │   ├── ai-stream.ts         # AI SSE 增量解析
 │   │   ├── index.ts             # 统一导出入口
 │   │   ├── settings.ts          # chrome.storage.local 读写 + Schema 版本迁移 + onSettingsChanged 监听
 │   │   ├── intel-sources.ts     # 12 大情报源 buildUrl 函数 + INTEL_SOURCES 定义表

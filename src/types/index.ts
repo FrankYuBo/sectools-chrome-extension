@@ -216,6 +216,8 @@ export interface UpdateCheckResult {
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
+  reasoning?: string;
+  pending?: boolean;
 }
 
 // --- MCP 服务器配置 ---

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.2 (2026-10-18)
+
+### Added
+- AI 研判实时流式展示正文与思考过程，思考区域接收时展开，正文返回或请求结束后自动折叠，可手动展开。
+
+### Changed
+- AI 聊天通过 runtime Port 接收 SSE 增量；思考内容仅用于展示，不进入多轮请求上下文。
+
+### Fixed
+- API Base URL 已含 `/chat/completions` 时不再重复追加路径。
+
+### Removed
+- 无。
+
 ## 0.4.1 (2026-09-05)
 
 ### Added

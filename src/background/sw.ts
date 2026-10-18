@@ -1,3 +1,4 @@
+import { readAiStream, parseAiDelta, type AiDelta } from '../utils/ai-stream';
 // ============================================================
 // Background Service Worker — 全局逻辑
 // 功能：接收 content script 的消息（如打开新标签、通知等）
@@ -75,6 +76,22 @@ type RuntimeMessage =
   | OpenTabMessage | NotifyMessage | UnshortenUrlMessage | RdapQueryMessage
   | AiAnalyzeMessage | McpListToolsMessage | McpCallToolMessage | McpTestConnectionMessage
   | LogsExportMessage;
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'sec:ai-stream') return;
+  const controller = new AbortController();
+  let started = false;
+  let connected = true;
+  port.onDisconnect.addListener(() => { connected = false; controller.abort(); });
+  const post = (event: unknown) => { if (connected) port.postMessage(event); };
+  port.onMessage.addListener((msg: AiAnalyzeMessage) => {
+    if (started || msg.type !== 'sec:ai-analyze') return;
+    started = true;
+    aiAnalyze(msg.messages, msg.promptTemplate, (delta) => post({ type: 'delta', ...delta }), controller.signal)
+      .then((result) => post({ type: 'done', ...result }))
+      .catch((err: unknown) => post({ type: 'error', error: err instanceof Error ? err.message : String(err) }));
+  });
+});
 
 chrome.runtime.onMessage.addListener((msg: RuntimeMessage, _sender, sendResponse) => {
   if (!msg || typeof msg !== 'object' || !msg.type) return false;
@@ -568,11 +585,12 @@ async function rdapQuery(target: string): Promise<RdapResult> {
 
 interface AiAnalyzeResult {
   text: string;
+  reasoning: string;
   mcpResults: McpToolResult[];
   enrichSummary: EnrichSummaryItem[];
 }
 
-async function aiAnalyze(messages: Array<{ role: string; content: string }>, promptTemplate: string): Promise<AiAnalyzeResult> {
+async function aiAnalyze(messages: Array<{ role: string; content: string }>, promptTemplate: string, onDelta?: (delta: AiDelta) => void, signal?: AbortSignal): Promise<AiAnalyzeResult> {
   const settings = await loadSettings();
   const { baseUrl, apiKey, model, mcpServers, enrichment } = settings.aiConfig;
 
@@ -628,7 +646,7 @@ async function aiAnalyze(messages: Array<{ role: string; content: string }>, pro
 
   log.info('ai', '调用 AI API', { model, url: `${apiBaseClean}/chat/completions`, msgCount: messages.length + 1, contentLen: rawContent.length });
 
-  const apiUrl = `${apiBaseClean}/chat/completions`;
+  const apiUrl = apiBaseClean.endsWith('/chat/completions') ? apiBaseClean : `${apiBaseClean}/chat/completions`;
   const resp = await fetch(apiUrl, {
     method: 'POST',
     headers: {
@@ -641,9 +659,9 @@ async function aiAnalyze(messages: Array<{ role: string; content: string }>, pro
         { role: 'system', content: systemContent },
         ...messages,
       ],
-      stream: false,
+      stream: !!onDelta,
     }),
-    signal: AbortSignal.timeout(120_000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
   }).catch((e: unknown) => {
     const msg = e instanceof Error ? e.message : String(e);
     const isTimeout = (e as { name?: string })?.name === 'TimeoutError' || /signal timed out|timed? ?out/i.test(msg);
@@ -660,14 +678,22 @@ async function aiAnalyze(messages: Array<{ role: string; content: string }>, pro
     throw new Error(`AI API 返回 HTTP ${resp.status}: ${body.slice(0, 200)}`);
   }
 
-  const data = await resp.json();
-  const result = data.choices?.[0]?.message?.content;
-  if (!result) {
-    log.error('ai', 'AI API 返回结果为空', data);
-    throw new Error('AI API 返回结果为空');
+  let result = '';
+  let reasoning = '';
+  const receive = (delta: AiDelta) => {
+    result += delta.content;
+    reasoning += delta.reasoning;
+    onDelta?.(delta);
+  };
+  if (onDelta && resp.headers.get('content-type')?.includes('text/event-stream')) {
+    if (!resp.body) throw new Error('AI API 返回空流');
+    await readAiStream(resp.body, receive);
+  } else {
+    receive(parseAiDelta(await resp.json()));
   }
+  if (!result && !reasoning) throw new Error('AI API 返回结果为空');
   log.info('ai', 'AI API 响应成功', { respLen: result.length });
-  return { text: result, mcpResults, enrichSummary };
+  return { text: result, reasoning, mcpResults, enrichSummary };
 }
 
 // ================================================================

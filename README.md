@@ -159,3 +159,9 @@ npm run release
 [ ] 新增需求已写 .spec/*.yaml
 [ ] npm run doctor 通过
 ```
+
+### AI 实时思考过程（0.4.2）
+
+AI 研判通过 SSE 实时展示正文及服务返回的 `reasoning_content` / `reasoning`。思考时自动展开，正文开始返回或请求结束后自动折叠，支持手动展开；未返回推理字段则仅显示正文。清空对话会中止请求，异常断流保留已接收内容并提示错误。思考文本不进入后续多轮上下文。无需新增配置，模型服务须支持 Chat Completions 流式响应；JSON 响应兼容一次性展示。
+
+相关实现：`src/utils/ai-stream.ts`（SSE 解析）、`src/background/sw.ts`（流式端口）、`src/content/chat-widget.ts`（增量 UI）。

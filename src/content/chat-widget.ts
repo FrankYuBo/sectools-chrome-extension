@@ -13,6 +13,7 @@ const WIDGET_HOST_ID = 'sectools-ai-chat-host';
 let widgetShadow: ShadowRoot | null = null;
 let widgetHostEl: HTMLElement | null = null;
 let isSending = false;
+let activePort: chrome.runtime.Port | null = null;
 let chatHistory: ChatMessage[] = [];
 let currentThemeMode = 'system';
 let rawInputText = ''; // 脱敏前的原始文本，用于切换脱敏开关时恢复
@@ -701,6 +702,7 @@ function buildChatDialog(): HTMLDivElement {
   clearBtn.className = 'ai-chat-btn-clear';
   clearBtn.textContent = '清空对话';
   clearBtn.addEventListener('click', () => {
+    activePort?.disconnect();
     chatHistory = [];
     renderMessages();
   });
@@ -723,6 +725,7 @@ function buildChatDialog(): HTMLDivElement {
 
 function renderMessages(): void {
   if (!chatBody) return;
+  const expanded = Array.from(chatBody.querySelectorAll('details')).map((d) => ({ open: d.open, thinking: d.dataset.thinking }));
   chatBody.textContent = '';
 
   if (chatHistory.length === 0) {
@@ -733,18 +736,45 @@ function renderMessages(): void {
     return;
   }
 
+  let reasoningIndex = 0;
   for (const msg of chatHistory) {
     if (msg.role === 'system') continue;
     const el = document.createElement('div');
     el.className = `ai-msg ${msg.role}`;
     if (msg.role === 'assistant') {
-      el.innerHTML = mdToHtml(msg.content);
+      renderAssistant(el, msg);
+      if (msg.reasoning) {
+        const details = el.querySelector('details');
+        const previous = expanded[reasoningIndex];
+        if (details && previous && previous.thinking === details.dataset.thinking) details.open = previous.open;
+        reasoningIndex++;
+      }
     } else {
       el.textContent = msg.content;
     }
     chatBody.appendChild(el);
   }
   scrollToBottom();
+}
+
+export function renderAssistant(el: HTMLElement, msg: ChatMessage): void {
+  el.textContent = '';
+  if (msg.reasoning) {
+    const details = document.createElement('details');
+    details.open = !!msg.pending && !msg.content;
+    details.dataset.thinking = String(details.open);
+    const summary = document.createElement('summary');
+    summary.textContent = '思考过程';
+    summary.style.cursor = 'pointer';
+    const reasoning = document.createElement('div');
+    reasoning.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;opacity:.8;margin:8px 0;max-height:280px;overflow:auto';
+    reasoning.textContent = msg.reasoning;
+    details.append(summary, reasoning);
+    el.appendChild(details);
+  }
+  const answer = document.createElement('div');
+  answer.innerHTML = mdToHtml(msg.content || (msg.pending ? '' : '模型未返回回答正文'));
+  el.appendChild(answer);
 }
 
 function appendMessage(role: 'user' | 'assistant', content: string): void {
@@ -855,24 +885,58 @@ async function doSend(): Promise<void> {
       mcpAutoCall: hasAutoCall,
     });
 
-    const resp = await chrome.runtime.sendMessage({
-      type: 'sec:ai-analyze',
-      messages: chatHistory.filter((m) => m.role !== 'system'),
-      promptTemplate,
-    }) as {
-      ok: boolean;
-      data?: string;
-      error?: string;
+    const messages = chatHistory.filter((m) => m.role !== 'system').map(({ role, content }) => ({ role, content }));
+    const reply: ChatMessage = { role: 'assistant', content: '', reasoning: '', pending: true };
+    chatHistory.push(reply);
+    const resp = await new Promise<{
+      ok: boolean; data?: string; error?: string;
       mcpResults?: Array<{ serverName: string; toolName: string; success: boolean; content: string; duration: number }>;
       enrichSummary?: Array<{ source: string; queried: number; hits: number; skipped?: string }>;
-    } | undefined;
+    }>((resolve, reject) => {
+      const port = chrome.runtime.connect({ name: 'sec:ai-stream' });
+      activePort = port;
+      let settled = false;
+      const finish = () => {
+        settled = true; reply.pending = false; activePort = null;
+        const last = chatBody?.querySelector('.ai-msg.assistant:last-child details') as HTMLDetailsElement | null;
+        if (last) { last.open = false; last.dataset.thinking = 'false'; }
+        renderMessages();
+      };
+      port.onDisconnect.addListener(() => {
+        if (!settled) {
+          const error = chrome.runtime.lastError?.message || 'AI 连接已断开';
+          finish();
+          reject(new Error(error));
+        }
+      });
+      port.onMessage.addListener((event) => {
+        if (settled) return;
+        if (event.type === 'delta') {
+          reply.content += event.content || '';
+          reply.reasoning = (reply.reasoning || '') + (event.reasoning || '');
+          hideLoading();
+          renderMessages();
+        } else if (event.type === 'done') {
+          reply.content = event.text;
+          reply.reasoning = event.reasoning;
+          finish();
+          port.disconnect();
+          resolve({ ok: true, data: event.text, mcpResults: event.mcpResults, enrichSummary: event.enrichSummary });
+        } else if (event.type === 'error') {
+          finish();
+          port.disconnect();
+          reject(new Error(event.error));
+        }
+      });
+      port.postMessage({ type: 'sec:ai-analyze', messages, promptTemplate });
+    });
 
     hideLoading();
 
     if (chrome.runtime.lastError) {
       appendError(`请求失败: ${chrome.runtime.lastError.message}`);
-    } else if (resp?.ok && resp.data) {
-      log.info('ai-send', 'AI 研判响应成功', { respLen: resp.data.length, mcpCount: resp.mcpResults?.length ?? 0, enrichSources: resp.enrichSummary?.length ?? 0 });
+    } else if (resp?.ok) {
+      log.info('ai-send', 'AI 研判响应成功', { respLen: (resp.data?.length ?? 0), mcpCount: resp.mcpResults?.length ?? 0, enrichSources: resp.enrichSummary?.length ?? 0 });
       // 显示 MCP 调用结果摘要
       if (resp.mcpResults && resp.mcpResults.length > 0) {
         const mcpParts: string[] = [];
@@ -898,7 +962,7 @@ async function doSend(): Promise<void> {
           log.info('ai-send', `情报源跳过: ${s.source}`, s.skipped);
         }
       }
-      appendMessage('assistant', resp.data);
+      // Reply was incrementally updated by the stream port.
     } else {
       appendError(resp?.error || '未知错误');
     }

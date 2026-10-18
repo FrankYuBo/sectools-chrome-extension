@@ -208,10 +208,10 @@ technical_notes: |
   2. 请求格式遵循 OpenAI Chat Completions API（兼容国内主流代理）：
      获取模型：GET {baseUrl}/models，Header: Authorization: Bearer {apiKey}
      对话请求：POST {baseUrl}/chat/completions
-     Body: { model, messages: [{role:'system', content: prompt}, {role:'user', content: text}], stream: false }
+     Body: { model, messages: [{role:'system', content: prompt}, {role:'user', content: text}], stream: true }
      兼容：OpenAI / Anthropic(国内代理转发为 OpenAI 格式) / DeepSeek / Qwen / Moonshot / GLM / Ollama 等
   3. Base URL 智能拼接：自动补 /v1 与 /chat/completions，已含则不重复追加
-  4. 流式输出（stream: true）可作为后续优化，v1 使用非流式
+  4. 流式输出通过 runtime Port 传递，思考展示见 ai-reasoning.spec.yaml
   5. Prompt 模板中的 {{content}} 占位符使用简单字符串替换；
      MCP 富化上下文追加在 {{content}} 内容之后
   6. Markdown 渲染为自研轻量实现（chat-widget.ts mdToHtml/mdInline），见 features.markdownRendering
